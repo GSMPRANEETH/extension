@@ -287,6 +287,10 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
       <div class="dsb-stat-value">${formatDuration(stats.sessionDuration)}</div>
       <div class="dsb-stat-label">Time Spent</div>
     </div>
+    <div class="dsb-stat">
+      <div class="dsb-stat-value">${stats.keyPressCount || 0}</div>
+      <div class="dsb-stat-label">Key Presses</div>
+    </div>
   `;
   card.appendChild(statsRow);
 

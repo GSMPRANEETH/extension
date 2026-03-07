@@ -10,6 +10,8 @@
 /* ─── Sensitivity labels ─────────────────────────────────────────────────── */
 const SENSITIVITY_LABELS = ['Low', 'Medium', 'High'];
 
+const POPUP_REFRESH_INTERVAL = 5000; // Auto-refresh session and stats every 5 seconds
+
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 function formatSeconds(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);
@@ -35,8 +37,8 @@ function renderScore(score) {
 
   pill.classList.remove('dsb-score-safe', 'dsb-score-warn', 'dsb-score-danger');
   if (score === null) return;
-  if (score >= 80)       pill.classList.add('dsb-score-danger');
-  else if (score >= 60)  pill.classList.add('dsb-score-warn');
+  if (score >= 65)       pill.classList.add('dsb-score-danger');
+  else if (score >= 40)  pill.classList.add('dsb-score-warn');
   else                   pill.classList.add('dsb-score-safe');
 }
 
@@ -55,6 +57,9 @@ async function loadSession() {
       if (session) {
         $('dsb-site').textContent = session.hostname || activeTab.url;
         renderScore(session.lastScore);
+        $('dsb-session-time').textContent = formatSeconds(session.latestSessionDuration || 0);
+        $('dsb-scroll-count').textContent = session.latestScrollCount || 0;
+        $('dsb-key-count').textContent    = session.latestKeyPressCount || 0;
       } else {
         $('dsb-site').textContent = activeTab.url
           ? new URL(activeTab.url).hostname
@@ -69,6 +74,15 @@ async function loadSession() {
     const tabData = stored[key];
     if (tabData) {
       renderScore(tabData.lastScore ?? null);
+      if (tabData.latestSessionDuration !== undefined) {
+        $('dsb-session-time').textContent = formatSeconds(tabData.latestSessionDuration || 0);
+      }
+      if (tabData.latestScrollCount !== undefined) {
+        $('dsb-scroll-count').textContent = tabData.latestScrollCount || 0;
+      }
+      if (tabData.latestKeyPressCount !== undefined) {
+        $('dsb-key-count').textContent = tabData.latestKeyPressCount || 0;
+      }
     }
   } catch (err) {
     console.error('[DSB Popup] loadSession error:', err);
@@ -256,4 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStats();
   loadSettings();
   bindEvents();
+
+  // Auto-refresh session and stats every 5 seconds so the popup shows live data
+  const refreshInterval = setInterval(() => {
+    loadSession();
+    loadStats();
+  }, POPUP_REFRESH_INTERVAL);
+
+  // Clean up interval when popup closes
+  window.addEventListener('unload', () => clearInterval(refreshInterval));
 });

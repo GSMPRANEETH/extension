@@ -42,7 +42,7 @@ function getSessionDuration() {
 }
 
 /* ─── Scroll event handler (throttled) ───────────────────────────────────── */
-function onScroll() {
+function onScroll(event) {
   const now = Date.now();
   if (now - lastScrollTime < SCROLL_THROTTLE) return; // throttle
   lastScrollTime = now;
@@ -52,23 +52,32 @@ function onScroll() {
 
   scrollCount++;
 
-  // Detect if the user has reached the bottom of the page (infinite scroll)
-  const distanceFromBottom =
-    document.documentElement.scrollHeight -
-    (window.scrollY + window.innerHeight);
+  // Detect if the user has reached the bottom — check both the window AND
+  // the scrolled element (e.g. YouTube Shorts inner snap-scroll container)
+  const target = event.target;
+  let distanceFromBottom;
 
-  if (distanceFromBottom < 100) { // within 100px of the bottom
+  if (target === document || target === document.documentElement || target === document.body) {
+    distanceFromBottom = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+  } else if (target.scrollHeight) {
+    distanceFromBottom = target.scrollHeight - (target.scrollTop + target.clientHeight);
+  } else {
+    distanceFromBottom = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
+  }
+
+  if (distanceFromBottom < BOTTOM_DETECTION_THRESHOLD) { // within threshold px of the bottom
     bottomReachedCount++;
   }
 }
 
 /* ─── Key press event handler ────────────────────────────────────────────── */
 // Track only keys that are typically used for doom-scrolling
-const DOOM_SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', ' ', 'j', 'k']);
+const DOOM_SCROLL_KEYS  = new Set(['ArrowDown', 'ArrowUp', ' ', 'Space', 'j', 'k']);
+const DOOM_SCROLL_CODES = new Set(['ArrowDown', 'ArrowUp', 'Space', 'KeyJ', 'KeyK']);
 
 function onKeyDown(event) {
   lastKeyAction = Date.now();
-  if (DOOM_SCROLL_KEYS.has(event.key)) {
+  if (DOOM_SCROLL_KEYS.has(event.key) || DOOM_SCROLL_CODES.has(event.code)) {
     keyPressCount++;
   }
 }
@@ -80,10 +89,14 @@ function onMouseMove() {
 
 /* ─── Video detection helpers ────────────────────────────────────────────── */
 
+// Track which video elements have already been counted for the short-video
+// metric to avoid re-counting the same element on every MutationObserver trigger.
+const countedShortVideos = new WeakSet();
+
 /**
  * Analyse a single <video> element.
  * - If it is currently playing and its duration > LONG_VIDEO_THRESHOLD → set longVideoDetected.
- * - If its duration is between 1s and SHORT_VIDEO_THRESHOLD → increment shortVideoCount.
+ * - If its duration is between 1s and SHORT_VIDEO_THRESHOLD → increment shortVideoCount (once per element).
  */
 function analyseVideo(videoEl) {
   const duration = videoEl.duration;
@@ -93,7 +106,8 @@ function analyseVideo(videoEl) {
     longVideoDetected = true;
   }
 
-  if (duration > 1 && duration < SHORT_VIDEO_THRESHOLD) {
+  if (duration > 1 && duration < SHORT_VIDEO_THRESHOLD && !countedShortVideos.has(videoEl)) {
+    countedShortVideos.add(videoEl);
     shortVideoCount++;
   }
 }
@@ -128,6 +142,48 @@ const videoObserver = new MutationObserver((mutations) => {
 videoObserver.observe(document.documentElement, {
   childList: true,
   subtree: true
+});
+
+/* ─── Wheel event handler (catches YouTube Shorts mouse-wheel navigation) ── */
+function onWheel(event) {
+  const now = Date.now();
+  if (now - lastScrollTime < SCROLL_THROTTLE) return;
+  lastScrollTime = now;
+  lastMouseMove = now;
+
+  if (Math.abs(event.deltaY) > WHEEL_DELTA_THRESHOLD) { // significant wheel movement
+    scrollCount++;
+  }
+}
+
+/* ─── Touch handlers (swipe navigation on touch/trackpad) ───────────────── */
+let touchStartY = 0;
+
+function onTouchStart(e) {
+  touchStartY = e.touches[0]?.clientY || 0;
+}
+
+function onTouchEnd(e) {
+  const touchEndY = e.changedTouches[0]?.clientY || 0;
+  const diff = Math.abs(touchStartY - touchEndY);
+  if (diff > SWIPE_THRESHOLD) { // significant swipe
+    scrollCount++;
+    lastMouseMove = Date.now();
+  }
+}
+
+/* ─── URL-change observer (YouTube Shorts changes URL on each swipe) ─────── */
+let lastUrl = window.location.href;
+const urlObserver = new MutationObserver(() => {
+  if (window.location.href !== lastUrl) {
+    lastUrl = window.location.href;
+    scrollCount++;        // each URL change on Shorts = a "scroll"
+    lastMouseMove = Date.now();
+  }
+});
+urlObserver.observe(document.documentElement, {
+  subtree: true,
+  childList: true
 });
 
 /* ─── Build and send ACTIVITY_REPORT ─────────────────────────────────────── */
@@ -179,6 +235,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         message.message,
         {
           scrollCount,
+          keyPressCount,
           sessionDuration: Math.round(getSessionDuration())
         }
       );
@@ -189,9 +246,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 /* ─── Attach event listeners ─────────────────────────────────────────────── */
-window.addEventListener('scroll', onScroll, { passive: true });
-document.addEventListener('keydown', onKeyDown, { passive: true });
+// Use capture phase on document so scroll events from ALL nested elements
+// (including YouTube Shorts inner snap-scroll containers) are caught.
+document.addEventListener('scroll', onScroll, { passive: true, capture: true });
+// Listen for keydown on window with capture to catch events intercepted by inner elements.
+window.addEventListener('keydown', onKeyDown, { capture: true, passive: true });
 document.addEventListener('mousemove', onMouseMove, { passive: true });
+document.addEventListener('wheel', onWheel, { passive: true, capture: true });
+document.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+document.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
 
 /* ─── Initial video scan ─────────────────────────────────────────────────── */
 scanVideos();
@@ -203,9 +266,13 @@ const reportIntervalId = setInterval(sendActivityReport, ACTIVITY_REPORT_INTERVA
 window.addEventListener('beforeunload', () => {
   clearInterval(reportIntervalId);
   videoObserver.disconnect();
-  window.removeEventListener('scroll', onScroll);
-  document.removeEventListener('keydown', onKeyDown);
+  urlObserver.disconnect();
+  document.removeEventListener('scroll', onScroll, { capture: true });
+  window.removeEventListener('keydown', onKeyDown, { capture: true });
   document.removeEventListener('mousemove', onMouseMove);
+  document.removeEventListener('wheel', onWheel, { capture: true });
+  document.removeEventListener('touchstart', onTouchStart, { capture: true });
+  document.removeEventListener('touchend', onTouchEnd, { capture: true });
 });
 
 } // end guard: if (!window.__dsbContentLoaded)

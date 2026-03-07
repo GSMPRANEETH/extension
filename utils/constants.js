@@ -18,9 +18,9 @@ const DOOM_SCROLL_SITES = [
 
 /* ─── Score thresholds for the doom-scroll detection algorithm ───────────── */
 const SCORE_THRESHOLDS = {
-  SAFE: 40,
-  WARNING: 60,
-  STRONG_WARNING: 80
+  SAFE: 25,
+  WARNING: 40,
+  STRONG_WARNING: 65
 };
 
 /* ─── Motivational messages shown in overlays (randomly selected) ─────────── */
@@ -38,9 +38,13 @@ const MOTIVATIONAL_MESSAGES = [
 ];
 
 /* ─── Timing constants (all values in milliseconds unless stated) ─────────── */
-const ACTIVITY_REPORT_INTERVAL = 30000; // Send activity report every 30 seconds
-const IDLE_THRESHOLD           = 120000; // 2 minutes — stop tracking when idle
-const SCROLL_THROTTLE          = 500;    // Throttle scroll events to once per 500ms
-const SNOOZE_DURATION          = 300000; // 5 minutes — "Give me 5 more minutes" snooze
-const LONG_VIDEO_THRESHOLD     = 600;    // 10 minutes in seconds — bypass warnings
-const SHORT_VIDEO_THRESHOLD    = 120;    // 2 minutes in seconds — counts as short video
+const ACTIVITY_REPORT_INTERVAL  = 15000; // Send activity report every 15 seconds
+const IDLE_THRESHOLD             = 120000; // 2 minutes — stop tracking when idle
+const SCROLL_THROTTLE            = 200;    // Throttle scroll events to once per 200ms
+const SNOOZE_DURATION            = 300000; // 5 minutes — "Give me 5 more minutes" snooze
+const LONG_VIDEO_THRESHOLD       = 600;    // 10 minutes in seconds — bypass warnings
+const SHORT_VIDEO_THRESHOLD      = 120;    // 2 minutes in seconds — counts as short video
+const BOTTOM_DETECTION_THRESHOLD = 150;    // px from bottom to count as "reached bottom"
+const WHEEL_DELTA_THRESHOLD      = 30;     // minimum wheel deltaY to count as a scroll
+const SWIPE_THRESHOLD            = 50;     // minimum touch distance (px) to count as a swipe
+const POPUP_REFRESH_INTERVAL     = 5000;   // Popup auto-refresh interval (5 seconds)
