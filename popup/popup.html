@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Doom Scroll Blocker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header class="dsb-header">
+    <div class="dsb-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <div class="dsb-header-text">
+      <h1>Doom Scroll Blocker</h1>
+      <span id="dsb-status-badge" class="dsb-badge dsb-badge-active">Active</span>
+    </div>
+    <button id="dsb-toggle-btn" class="dsb-toggle" title="Enable/Disable extension" aria-pressed="true">
+      <span class="dsb-toggle-knob"></span>
+    </button>
+  </header>
+
+  <!-- ── Current Session Panel ───────────────────────────────────────── -->
+  <section class="dsb-panel" id="dsb-session-panel">
+    <h2 class="dsb-panel-title">Current Session</h2>
+    <div class="dsb-session-site" id="dsb-site">No active doom-scroll site</div>
+
+    <!-- Score indicator -->
+    <div class="dsb-score-row">
+      <span class="dsb-label">Doom Score</span>
+      <div class="dsb-score-pill" id="dsb-score-pill">
+        <span id="dsb-score-value">—</span>
+      </div>
+    </div>
+
+    <div class="dsb-metrics">
+      <div class="dsb-metric">
+        <div class="dsb-metric-value" id="dsb-session-time">—</div>
+        <div class="dsb-metric-label">Session Time</div>
+      </div>
+      <div class="dsb-metric">
+        <div class="dsb-metric-value" id="dsb-scroll-count">—</div>
+        <div class="dsb-metric-label">Scrolls</div>
+      </div>
+      <div class="dsb-metric">
+        <div class="dsb-metric-value" id="dsb-key-count">—</div>
+        <div class="dsb-metric-label">Key Presses</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Statistics Panel ────────────────────────────────────────────── -->
+  <section class="dsb-panel" id="dsb-stats-panel">
+    <h2 class="dsb-panel-title">Statistics</h2>
+
+    <div class="dsb-stats-grid">
+      <div class="dsb-stat-item">
+        <div class="dsb-stat-value" id="dsb-total-scrolls">0</div>
+        <div class="dsb-stat-label">Total Scrolls</div>
+      </div>
+      <div class="dsb-stat-item">
+        <div class="dsb-stat-value" id="dsb-total-time">0m</div>
+        <div class="dsb-stat-label">Total Time</div>
+      </div>
+      <div class="dsb-stat-item">
+        <div class="dsb-stat-value" id="dsb-total-warnings">0</div>
+        <div class="dsb-stat-label">Warnings</div>
+      </div>
+      <div class="dsb-stat-item">
+        <div class="dsb-stat-value" id="dsb-doom-sessions">0</div>
+        <div class="dsb-stat-label">Doom Sessions</div>
+      </div>
+    </div>
+
+    <div class="dsb-divider"></div>
+
+    <h3 class="dsb-sub-title">Top Doom-Scroll Sites</h3>
+    <ul class="dsb-sites-list" id="dsb-sites-list">
+      <li class="dsb-sites-empty">No data yet</li>
+    </ul>
+  </section>
+
+  <!-- ── Settings Panel ──────────────────────────────────────────────── -->
+  <section class="dsb-panel" id="dsb-settings-panel">
+    <!-- Collapsible header -->
+    <button class="dsb-collapsible" id="dsb-settings-toggle" aria-expanded="false">
+      <h2 class="dsb-panel-title">⚙️ Settings</h2>
+      <svg class="dsb-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
+
+    <div class="dsb-collapsible-body" id="dsb-settings-body" hidden>
+      <!-- Sensitivity -->
+      <label class="dsb-field-label">Detection Sensitivity</label>
+      <div class="dsb-sensitivity-row">
+        <span class="dsb-sensitivity-label">Low</span>
+        <input type="range" id="dsb-sensitivity" min="0" max="2" step="1" value="1" class="dsb-slider" />
+        <span class="dsb-sensitivity-label">High</span>
+      </div>
+      <div class="dsb-sensitivity-hint" id="dsb-sensitivity-hint">Medium</div>
+
+      <!-- Motivational messages toggle -->
+      <div class="dsb-field-row">
+        <label class="dsb-field-label" for="dsb-motiv-toggle">Motivational Messages</label>
+        <input type="checkbox" id="dsb-motiv-toggle" class="dsb-checkbox" checked />
+      </div>
+
+      <!-- Whitelist -->
+      <label class="dsb-field-label">Whitelist (never block)</label>
+      <div class="dsb-whitelist-input-row">
+        <input type="text" id="dsb-whitelist-input" class="dsb-text-input" placeholder="e.g. youtube.com" />
+        <button id="dsb-whitelist-add" class="dsb-btn dsb-btn-sm">Add</button>
+      </div>
+      <ul class="dsb-whitelist-list" id="dsb-whitelist-list"></ul>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────── -->
+  <footer class="dsb-footer">
+    <button id="dsb-reset-btn" class="dsb-btn dsb-btn-danger">Reset Statistics</button>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
