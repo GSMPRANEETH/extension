@@ -440,3 +440,26 @@ body {
 ::-webkit-scrollbar        { width: 4px; }
 ::-webkit-scrollbar-track  { background: var(--dsb-bg); }
 ::-webkit-scrollbar-thumb  { background: var(--dsb-border); border-radius: 2px; }
+
+/* ─── Page type badge ────────────────────────────────────────────────────── */
+.dsb-page-type-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--dsb-surface2);
+  color: var(--dsb-text-muted);
+  border: 1px solid var(--dsb-border);
+}
+
+.dsb-page-type-productive {
+  background: rgba(76, 175, 80, 0.15);
+  color: var(--dsb-safe);
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.dsb-page-type-high {
+  background: rgba(244, 67, 54, 0.1);
+  color: var(--dsb-warn);
+  border-color: rgba(244, 67, 54, 0.2);
+}

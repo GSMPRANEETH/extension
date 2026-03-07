@@ -21,6 +21,17 @@ const SCORE_THRESHOLDS = {
   STRONG_WARNING: 65
 };
 
+const CONTEXT_MULTIPLIERS = {
+  'short_form_feed':  1.5,
+  'social_feed':      1.2,
+  'comments_section': 0.8,
+  'news_feed':        1.0,
+  'video_player':     0.3,
+  'search':           0.2,
+  'productive':       0.0,
+  'unknown':          0.5
+};
+
 const MOTIVATIONAL_MESSAGES = [
   "Your future self will thank you for stopping now.",
   "Time is your most valuable asset. Invest it wisely.",
@@ -34,81 +45,90 @@ const MOTIVATIONAL_MESSAGES = [
   "Remember why you opened your browser. Was it for this?"
 ];
 
-const SNOOZE_DURATION        = 300000; // 5 minutes in ms
-const STRONG_WARNING_FOLLOWUP = 300;   // seconds after strong warning before "final reminder"
+const SNOOZE_DURATION         = 300000; // 5 minutes in ms
+const STRONG_WARNING_FOLLOWUP = 300;    // seconds after strong warning before "final reminder"
+const CONTINUE_REARM_DELAY    = 180;    // seconds after "Continue Scrolling" before re-arming
+const BREAK_DURATION          = 600000; // 10 minutes in ms
+const BREAK_MIN_DURATION      = 120000; // 2 minutes — minimum break before "I'm back" is enabled
+const VIDEO_SCROLL_THRESHOLD  = 0.2;    // fraction of viewport — player is "past" if bottom < 20%
+const MIN_CODE_BLOCKS_PRODUCTIVE = 3;   // minimum code blocks to classify page as productive
 
 /* ─── In-memory session state (keyed by tabId) ───────────────────────────── */
 // Persisted to chrome.storage.local on every update; restored on service-worker restart.
 let sessions = {}; // { [tabId]: SessionState }
+
+// Hostnames currently on a "take a break" block, mapped to expiry timestamp
+let breakBlocks = {}; // { [hostname]: expiryMs }
 
 /**
  * @typedef {Object} SessionState
  * @property {number}  tabId
  * @property {string}  hostname
  * @property {string}  url
+ * @property {string}  pageContext         - last reported page context
+ * @property {string}  currentSection      - current section key
  * @property {number}  lastScore
- * @property {string}  lastWarningLevel   - 'none' | 'warning' | 'strong'
- * @property {number}  lastWarningTime    - ms since epoch
+ * @property {string}  lastWarningLevel    - 'none' | 'warning' | 'strong'
+ * @property {number}  lastWarningTime     - ms since epoch
  * @property {boolean} snoozed
- * @property {number}  snoozeUntil        - ms since epoch
- * @property {number}  strongWarningTime  - ms since epoch (when strong warning fired)
+ * @property {number}  snoozeUntil         - ms since epoch
+ * @property {number}  strongWarningTime   - ms since epoch (when strong warning fired)
  * @property {boolean} finalReminderSent
- * @property {number}  lastScrollCount    - scroll count from previous report (for delta)
- * @property {number}  lastKeyPressCount  - key count from previous report (for delta)
- * @property {number}  lastSessionTime    - session duration from previous report (for delta)
+ * @property {number}  continueClickedAt   - ms since epoch (when "Continue Scrolling" was clicked)
+ * @property {number}  lastScrollCount     - scroll count from previous report (for delta)
+ * @property {number}  lastKeyPressCount   - key count from previous report (for delta)
+ * @property {number}  lastSessionTime     - session duration from previous report (for delta)
  */
 
 /* ─── Scoring algorithm ──────────────────────────────────────────────────────
  *
  * Inputs come from the ACTIVITY_REPORT message sent by the content script.
  *
- * score = 0
- *  +10  sessionDuration > 60s    (> 1 min on page)
- *  +15  sessionDuration > 180s   (> 3 min)
- *  +15  sessionDuration > 300s   (> 5 min, total +40 if >5min)
+ * rawScore = 0
+ *  +10  sessionDuration > 60s
+ *  +15  sessionDuration > 180s
+ *  +15  sessionDuration > 300s
  *  +10  scrollCount > 10
  *  +10  scrollCount > 30
  *  +10  scrollCount > 60
  *  +10  keyPressCount > 10
  *  +10  keyPressCount > 30
- *  +15  bottomReachedCount > 3   (hitting bottom of infinite feed)
- *  +10  shortVideoCount > 3      (short videos consumed)
+ *  +15  bottomReachedCount > 3
+ *  +10  shortVideoCount > 3
  *  +10  shortVideoCount > 8
- *  +5   idleTime < 10s           (constant engagement — low idle)
- *  -50  longVideoDetected        (watching long content — bypass)
+ *  +5   idleTime < 10s
+ *  -50  longVideoDetected
+ *
+ * finalScore = rawScore * CONTEXT_MULTIPLIERS[pageContext]
  *
  * ─────────────────────────────────────────────────────────────────────────── */
 function calculateScore(data) {
   let score = 0;
 
-  // Session duration: graduated scoring
-  if (data.sessionDuration > 60)        score += 10;
-  if (data.sessionDuration > 180)       score += 15;
-  if (data.sessionDuration > 300)       score += 15;
+  if (data.sessionDuration > 60)  score += 10;
+  if (data.sessionDuration > 180) score += 15;
+  if (data.sessionDuration > 300) score += 15;
 
-  // Scroll count: graduated
-  if (data.scrollCount > 10)            score += 10;
-  if (data.scrollCount > 30)            score += 10;
-  if (data.scrollCount > 60)            score += 10;
+  if (data.scrollCount > 10)      score += 10;
+  if (data.scrollCount > 30)      score += 10;
+  if (data.scrollCount > 60)      score += 10;
 
-  // Key presses: graduated
-  if (data.keyPressCount > 10)          score += 10;
-  if (data.keyPressCount > 30)          score += 10;
+  if (data.keyPressCount > 10)    score += 10;
+  if (data.keyPressCount > 30)    score += 10;
 
-  // Bottom reached (infinite scroll)
-  if (data.bottomReachedCount > 3)      score += 15;
+  if (data.bottomReachedCount > 3) score += 15;
 
-  // Short videos consumed
-  if (data.shortVideoCount > 3)         score += 10;
-  if (data.shortVideoCount > 8)         score += 10;
+  if (data.shortVideoCount > 3)   score += 10;
+  if (data.shortVideoCount > 8)   score += 10;
 
-  // Active engagement (low idle = constantly scrolling)
-  if (data.idleTime < 10)               score += 5;
+  if (data.idleTime < 10)         score += 5;
 
-  // Long video bypass — major negative score
-  if (data.longVideoDetected)           score -= 50;
+  if (data.longVideoDetected)     score -= 50;
 
-  return score;
+  // Apply context multiplier
+  const context    = data.pageContext || 'unknown';
+  const multiplier = CONTEXT_MULTIPLIERS[context] ?? CONTEXT_MULTIPLIERS['unknown'];
+  return Math.round(score * multiplier);
 }
 
 /* ─── Pick a random motivational message ─────────────────────────────────── */
@@ -222,16 +242,35 @@ async function handleActivityReport(tabId, data) {
   try {
     const settings = await chrome.storage.local.get('dsbSettings');
     const cfg = settings.dsbSettings || {};
-    if (cfg.enabled === false) return; // Extension disabled by user
+    if (cfg.enabled === false) return;
 
     // Check whitelist
     const whitelist = cfg.whitelist || [];
     if (whitelist.some(domain => data.hostname && data.hostname.includes(domain))) {
-      return; // Site is whitelisted
+      return;
+    }
+
+    // Skip entirely for productive pages
+    if (data.pageContext === 'productive') return;
+
+    // Check if this hostname is currently on a break block
+    const now = Date.now();
+    const blockExpiry = breakBlocks[data.hostname];
+    if (blockExpiry && now < blockExpiry) {
+      // Site is blocked during a break — tell the content script to show the break screen
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'SHOW_BREAK_REDIRECT',
+          remainingMs: blockExpiry - now
+        });
+      } catch (_) {}
+      return;
+    } else if (blockExpiry) {
+      // Block has expired
+      delete breakBlocks[data.hostname];
     }
 
     // Adjust thresholds based on sensitivity setting
-    // sensitivity: 'low' = multiply thresholds by 1.5, 'high' = multiply by 0.7
     const sensitivity = cfg.sensitivity || 'medium';
     let thresholdMultiplier = 1.0;
     if (sensitivity === 'low')  thresholdMultiplier = 1.5;
@@ -248,6 +287,8 @@ async function handleActivityReport(tabId, data) {
         tabId,
         hostname: data.hostname,
         url: data.url,
+        pageContext: data.pageContext || 'unknown',
+        currentSection: '',
         lastScore: 0,
         lastWarningLevel: 'none',
         lastWarningTime: 0,
@@ -255,6 +296,7 @@ async function handleActivityReport(tabId, data) {
         snoozeUntil: 0,
         strongWarningTime: 0,
         finalReminderSent: false,
+        continueClickedAt: 0,
         lastScrollCount: 0,
         lastKeyPressCount: 0,
         lastSessionTime: 0
@@ -262,20 +304,21 @@ async function handleActivityReport(tabId, data) {
     }
 
     const session = sessions[tabId];
-    session.lastScore = score;
-    session.hostname  = data.hostname;
-    session.url       = data.url;
+    session.lastScore   = score;
+    session.hostname    = data.hostname;
+    session.url         = data.url;
+    session.pageContext = data.pageContext || 'unknown';
 
     // Store latest raw activity data so the popup can show live metrics
-    session.latestScrollCount       = data.scrollCount;
-    session.latestKeyPressCount     = data.keyPressCount;
-    session.latestSessionDuration   = data.sessionDuration;
+    session.latestScrollCount        = data.scrollCount;
+    session.latestKeyPressCount      = data.keyPressCount;
+    session.latestSessionDuration    = data.sessionDuration;
     session.latestBottomReachedCount = data.bottomReachedCount;
-    session.latestShortVideoCount   = data.shortVideoCount;
-    session.latestLongVideoDetected = data.longVideoDetected;
+    session.latestShortVideoCount    = data.shortVideoCount;
+    session.latestLongVideoDetected  = data.longVideoDetected;
+    session.latestPageContext        = data.pageContext;
 
     // ── Snooze check ──────────────────────────────────────────────────────
-    // If the user clicked "Give me 5 more minutes", skip warnings until snooze expires.
     if (session.snoozed && Date.now() < session.snoozeUntil) {
       await persistSessions();
       return;
@@ -283,19 +326,29 @@ async function handleActivityReport(tabId, data) {
       session.snoozed = false;
     }
 
-    // ── Long-video bypass ─────────────────────────────────────────────────
-    // When a long video is detected the score already has -50, but explicitly
-    // skip warnings to avoid annoying users watching lectures or movies.
-    if (data.longVideoDetected) {
-      await persistSessions();
-      return;
+    // ── "Continue Scrolling" re-arm delay ────────────────────────────────
+    // After clicking "Continue", suppress new warnings for CONTINUE_REARM_DELAY seconds.
+    if (session.continueClickedAt > 0) {
+      const elapsed = (Date.now() - session.continueClickedAt) / 1000;
+      if (elapsed < CONTINUE_REARM_DELAY) {
+        await persistSessions();
+        return;
+      } else {
+        // Re-arm: allow warnings to fire again
+        session.continueClickedAt = 0;
+        session.lastWarningLevel  = 'none';
+      }
     }
+
+    // ── Long-video bypass ─────────────────────────────────────────────────
+    // The context multiplier already handles this (video_player = 0.3), but for
+    // a pure long-video watch (not comments) the score will stay very low anyway.
+    // We only skip entirely if the score would not reach any threshold.
+    // (No hard bypass needed; the multiplier handles it.)
 
     let warningTriggered = false;
 
     // ── Strong warning → final reminder check ────────────────────────────
-    // After a strong warning, if the user continued scrolling for 5 more minutes
-    // send one final (escalated) reminder.
     if (
       session.lastWarningLevel === 'strong' &&
       !session.finalReminderSent &&
@@ -314,16 +367,14 @@ async function handleActivityReport(tabId, data) {
 
     // ── Normal threshold checks ───────────────────────────────────────────
     if (score >= strongThreshold) {
-      // Only send the strong warning once per session (unless the user snoozes and comes back)
       if (session.lastWarningLevel !== 'strong') {
-        session.lastWarningLevel = 'strong';
-        session.lastWarningTime  = Date.now();
+        session.lastWarningLevel  = 'strong';
+        session.lastWarningTime   = Date.now();
         session.strongWarningTime = Date.now();
         warningTriggered = true;
         await sendWarning(tabId, 'strong', randomMessage());
       }
     } else if (score >= warnThreshold) {
-      // Only send the warning once per level transition to avoid spam
       if (session.lastWarningLevel === 'none') {
         session.lastWarningLevel = 'warning';
         session.lastWarningTime  = Date.now();
@@ -335,7 +386,6 @@ async function handleActivityReport(tabId, data) {
     await updateAggregateStats(data, session, warningTriggered, data.hostname);
     await persistSessions();
 
-    // Also store the current session score so the popup can read it
     await chrome.storage.local.set({ [`dsbTabSession_${tabId}`]: session });
 
   } catch (err) {
@@ -363,12 +413,19 @@ async function cleanupStaleSessions() {
     for (const tabId of Object.keys(sessions)) {
       if (!openTabIds.has(Number(tabId))) {
         delete sessions[tabId];
-        // Also remove the per-tab key from storage
         await chrome.storage.local.remove(`dsbTabSession_${tabId}`);
         changed = true;
       }
     }
     if (changed) await persistSessions();
+
+    // Also clean up expired break blocks
+    const now = Date.now();
+    for (const hostname of Object.keys(breakBlocks)) {
+      if (breakBlocks[hostname] <= now) {
+        delete breakBlocks[hostname];
+      }
+    }
   } catch (err) {
     console.error('[DSB] Error during session cleanup:', err);
   }
@@ -388,12 +445,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleActivityReport(tabId, message.data).then(() => {
       sendResponse({ ok: true });
     });
-    return true; // Keep the message channel open for async response
+    return true;
   }
 
   if (message.type === 'SNOOZE') {
     handleSnooze(tabId).then(() => sendResponse({ ok: true }));
     return true;
+  }
+
+  if (message.type === 'SECTION_CHANGE') {
+    // Reset session scoring metrics when the user navigates to a new section
+    const session = sessions[tabId];
+    if (session) {
+      session.lastScore         = 0;
+      session.lastWarningLevel  = 'none';
+      session.lastWarningTime   = 0;
+      session.snoozed           = false;
+      session.snoozeUntil       = 0;
+      session.strongWarningTime = 0;
+      session.finalReminderSent = false;
+      session.continueClickedAt = 0;
+      session.currentSection    = message.data?.newSection || '';
+      session.hostname          = message.data?.hostname   || session.hostname;
+      session.url               = message.data?.url        || session.url;
+      session.latestScrollCount        = 0;
+      session.latestKeyPressCount      = 0;
+      session.latestSessionDuration    = 0;
+      persistSessions().then(() => {
+        chrome.storage.local.set({ [`dsbTabSession_${tabId}`]: session });
+      });
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.type === 'TAKE_BREAK') {
+    // Block the hostname for the break duration
+    const hostname = message.hostname;
+    const duration = message.duration || BREAK_DURATION;
+    if (hostname) {
+      breakBlocks[hostname] = Date.now() + duration;
+    }
+    // Reset session for this tab so scores start fresh after the break
+    const session = sessions[tabId];
+    if (session) {
+      session.lastScore         = 0;
+      session.lastWarningLevel  = 'none';
+      session.lastWarningTime   = 0;
+      session.snoozed           = false;
+      session.snoozeUntil       = 0;
+      session.strongWarningTime = 0;
+      session.finalReminderSent = false;
+      session.continueClickedAt = 0;
+      persistSessions();
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.type === 'CONTINUE_SCROLLING') {
+    // User dismissed the strong warning — re-arm after CONTINUE_REARM_DELAY seconds
+    const session = sessions[tabId];
+    if (session) {
+      session.continueClickedAt = Date.now();
+      session.lastWarningLevel  = 'none'; // allow next threshold to re-trigger
+      persistSessions();
+    }
+    sendResponse({ ok: true });
+    return false;
   }
 
   // Popup requesting the current session for the active tab
