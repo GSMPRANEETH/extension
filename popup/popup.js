@@ -28,7 +28,40 @@ function formatMinutes(totalSeconds) {
 
 function $ (id) { return document.getElementById(id); }
 
-/* ─── Score display ──────────────────────────────────────────────────────── */
+/* ─── Context label helpers ──────────────────────────────────────────────── */
+const CONTEXT_LABELS = {
+  'short_form_feed':  'Short-form Feed 🎬',
+  'social_feed':      'Social Feed 📱',
+  'comments_section': 'Comments 💬',
+  'news_feed':        'News Feed 📰',
+  'video_player':     'Video Player ▶️',
+  'search':           'Search 🔍',
+  'productive':       'Productive ✅ (exempt)',
+  'unknown':          'Unknown'
+};
+
+function getContextLabel(context) {
+  return CONTEXT_LABELS[context] || context || '—';
+}
+
+function renderPageContext(context) {
+  const row   = $('dsb-page-type-row');
+  const badge = $('dsb-page-type');
+  if (!context || context === 'unknown') {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  badge.textContent = getContextLabel(context);
+  badge.className = 'dsb-page-type-badge';
+  if (context === 'productive') {
+    badge.classList.add('dsb-page-type-productive');
+  } else if (context === 'short_form_feed' || context === 'social_feed') {
+    badge.classList.add('dsb-page-type-high');
+  }
+}
+
+
 function renderScore(score) {
   const pill  = $('dsb-score-pill');
   const value = $('dsb-score-value');
@@ -60,6 +93,7 @@ async function loadSession() {
         $('dsb-session-time').textContent = formatSeconds(session.latestSessionDuration || 0);
         $('dsb-scroll-count').textContent = session.latestScrollCount || 0;
         $('dsb-key-count').textContent    = session.latestKeyPressCount || 0;
+        renderPageContext(session.latestPageContext);
       } else {
         $('dsb-site').textContent = activeTab.url
           ? new URL(activeTab.url).hostname
@@ -82,6 +116,9 @@ async function loadSession() {
       }
       if (tabData.latestKeyPressCount !== undefined) {
         $('dsb-key-count').textContent = tabData.latestKeyPressCount || 0;
+      }
+      if (tabData.latestPageContext !== undefined) {
+        renderPageContext(tabData.latestPageContext);
       }
     }
   } catch (err) {

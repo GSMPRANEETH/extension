@@ -9,18 +9,15 @@
     "alarms",
     "activeTab"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background/background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.youtube.com/*",
-        "*://*.instagram.com/*",
-        "*://*.tiktok.com/*",
-        "*://*.twitter.com/*",
-        "*://*.x.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": [
         "utils/constants.js",
         "content/overlay.js",

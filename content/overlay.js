@@ -1,8 +1,9 @@
 /**
  * overlay.js — Doom Scroll Blocker warning overlay.
  *
- * Exposes a single global function `showDoomScrollWarning(level, message, stats)`
- * called by content.js when the background script requests a warning.
+ * Exposes global functions:
+ *  - `showDoomScrollWarning(level, message, stats)` — called by content.js
+ *  - `showBreakScreen(remainingMs)` — called when a break block is active
  *
  * All DOM is mounted inside a Shadow DOM host to avoid CSS conflicts with the
  * host page. CSS class names are prefixed with `dsb-` for extra safety.
@@ -13,7 +14,11 @@
 'use strict';
 
 /* ─── Snooze state ───────────────────────────────────────────────────────── */
-let snoozedUntil = 0; // epoch ms — skip showing overlays during snooze
+let snoozedUntil = 0;
+
+/* ─── Active break screen interval handles (for cleanup) ────────────────── */
+let activeBreathInterval = null;
+let activeBreakTimerInterval = null;
 
 /* ─── Overlay host element (Shadow DOM container) ───────────────────────── */
 let shadowHost = null;
@@ -28,7 +33,6 @@ function getShadowRoot() {
 
   shadowHost = document.createElement('div');
   shadowHost.id = 'dsb-shadow-host';
-  // Position the host so it doesn't disrupt page layout
   shadowHost.style.cssText = `
     position: fixed !important;
     top: 0 !important;
@@ -42,7 +46,6 @@ function getShadowRoot() {
 
   shadowRoot = shadowHost.attachShadow({ mode: 'closed' });
 
-  // Inject overlay CSS into the shadow root
   const style = document.createElement('style');
   style.textContent = getDSBStyles();
   shadowRoot.appendChild(style);
@@ -50,11 +53,8 @@ function getShadowRoot() {
   return shadowRoot;
 }
 
-/* ─── Overlay styles (injected into shadow root) ─────────────────────────── */
+/* ─── Overlay styles ──────────────────────────────────────────────────────── */
 function getDSBStyles() {
-  // Styles are also in overlay.css (loaded by manifest) but shadow DOM requires
-  // styles to be injected directly. The overlay.css in the manifest ensures
-  // the @font-face declarations (if any) are available at the document level.
   return `
     :host { all: initial; }
 
@@ -73,6 +73,11 @@ function getDSBStyles() {
 
     .dsb-backdrop.dsb-strong {
       background: rgba(30, 0, 0, 0.85);
+    }
+
+    .dsb-backdrop.dsb-break {
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      animation: dsb-fade-in 0.5s ease forwards;
     }
 
     @keyframes dsb-fade-in {
@@ -105,6 +110,12 @@ function getDSBStyles() {
 
     .dsb-card.dsb-strong {
       --dsb-accent: #f44336;
+    }
+
+    .dsb-card.dsb-break-card {
+      --dsb-accent: #4caf50;
+      --dsb-bg: rgba(15, 32, 39, 0.95);
+      max-width: 520px;
     }
 
     .dsb-icon {
@@ -207,6 +218,63 @@ function getDSBStyles() {
       background: var(--dsb-border);
       margin: 16px 0;
     }
+
+    /* Breathing animation for break screen */
+    .dsb-breathe-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    .dsb-breathe-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #4caf50 0%, #087f23 100%);
+      box-shadow: 0 0 30px rgba(76, 175, 80, 0.4);
+      animation: dsb-breathe 4s ease-in-out infinite;
+    }
+
+    @keyframes dsb-breathe {
+      0%, 100% { transform: scale(1);    opacity: 0.7; }
+      50%       { transform: scale(1.4); opacity: 1;   }
+    }
+
+    .dsb-breathe-label {
+      font-size: 13px;
+      color: var(--dsb-text-muted);
+      margin-top: 10px;
+      animation: dsb-breathe-text 4s ease-in-out infinite;
+    }
+
+    @keyframes dsb-breathe-text {
+      0%, 45%  { content: 'Breathe in...'; opacity: 1; }
+      50%, 95% { opacity: 0.6; }
+      100%     { opacity: 1; }
+    }
+
+    .dsb-break-timer {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--dsb-accent);
+      margin: 12px 0 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dsb-break-timer-label {
+      font-size: 13px;
+      color: var(--dsb-text-muted);
+      margin-bottom: 20px;
+    }
+
+    .dsb-quote {
+      font-style: italic;
+      color: var(--dsb-text-muted);
+      font-size: 14px;
+      margin: 16px 0;
+      padding: 0 8px;
+    }
   `;
 }
 
@@ -223,59 +291,200 @@ function removeOverlay() {
   const existing = root.querySelector('.dsb-backdrop');
   if (existing) existing.remove();
   if (shadowHost) shadowHost.style.pointerEvents = 'none';
+
+  // Clean up any running break screen intervals
+  if (activeBreathInterval !== null) {
+    clearInterval(activeBreathInterval);
+    activeBreathInterval = null;
+  }
+  if (activeBreakTimerInterval !== null) {
+    clearInterval(activeBreakTimerInterval);
+    activeBreakTimerInterval = null;
+  }
 }
 
-/* ─── Build and show the overlay ─────────────────────────────────────────── */
+/* ─── Show the break screen ──────────────────────────────────────────────── */
+/**
+ * Replaces current overlay with a full-screen break experience.
+ * @param {number} remainingMs - milliseconds remaining on the break
+ */
+function showBreakScreen(remainingMs) {
+  removeOverlay();
+
+  const root = getShadowRoot();
+  shadowHost.style.pointerEvents = 'all';
+  shadowHost.style.width  = '100vw';
+  shadowHost.style.height = '100vh';
+
+  const breakStartMs = Date.now();
+  const minDurationMs = BREAK_MIN_DURATION;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'dsb-backdrop dsb-break';
+
+  const card = document.createElement('div');
+  card.className = 'dsb-card dsb-break-card';
+
+  const icon = document.createElement('div');
+  icon.className = 'dsb-icon';
+  icon.textContent = '🌿';
+  card.appendChild(icon);
+
+  const title = document.createElement('div');
+  title.className = 'dsb-title';
+  title.textContent = 'Time for a Break';
+  card.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'dsb-message';
+  subtitle.textContent = 'Step away, relax, and let your mind reset.';
+  card.appendChild(subtitle);
+
+  // Breathing animation
+  const breatheContainer = document.createElement('div');
+  breatheContainer.className = 'dsb-breathe-container';
+  breatheContainer.innerHTML = `
+    <div>
+      <div class="dsb-breathe-circle"></div>
+      <div class="dsb-breathe-label">Breathe in...</div>
+    </div>
+  `;
+  card.appendChild(breatheContainer);
+
+  // Breathing label alternates text
+  const breatheLabel = breatheContainer.querySelector('.dsb-breathe-label');
+  let breathePhase = 0;
+  activeBreathInterval = setInterval(() => {
+    breathePhase = (breathePhase + 1) % 2;
+    breatheLabel.textContent = breathePhase === 0 ? 'Breathe in...' : 'Breathe out...';
+  }, 2000);
+
+  // Countdown timer
+  const timerEl = document.createElement('div');
+  timerEl.className = 'dsb-break-timer';
+
+  const timerLabelEl = document.createElement('div');
+  timerLabelEl.className = 'dsb-break-timer-label';
+  timerLabelEl.textContent = 'remaining on your break';
+  card.appendChild(timerEl);
+  card.appendChild(timerLabelEl);
+
+  function updateTimer() {
+    const elapsed   = Date.now() - breakStartMs;
+    const remaining = Math.max(0, remainingMs - elapsed);
+    const totalSecs = Math.ceil(remaining / 1000);
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    timerEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    return remaining;
+  }
+  updateTimer();
+
+  // Random motivational quote
+  const quotes = MOTIVATIONAL_MESSAGES;
+  const quote = document.createElement('div');
+  quote.className = 'dsb-quote';
+  quote.textContent = `"${quotes[Math.floor(Math.random() * quotes.length)]}"`;
+  card.appendChild(quote);
+
+  const divider = document.createElement('div');
+  divider.className = 'dsb-divider';
+  card.appendChild(divider);
+
+  // "I'm refreshed" button — enabled only after BREAK_MIN_DURATION
+  const refreshedBtn = document.createElement('button');
+  refreshedBtn.className = 'dsb-btn dsb-btn-primary';
+  refreshedBtn.textContent = "I'm refreshed, let me back";
+  refreshedBtn.disabled = true;
+
+  const btnLabel = document.createElement('div');
+  btnLabel.className = 'dsb-timer-label';
+  btnLabel.style.marginTop = '8px';
+  card.appendChild(refreshedBtn);
+  card.appendChild(btnLabel);
+
+  let timerInterval;
+  function tick() {
+    const rem = updateTimer();
+    const elapsed = Date.now() - breakStartMs;
+
+    if (elapsed >= minDurationMs && refreshedBtn.disabled) {
+      refreshedBtn.disabled = false;
+      btnLabel.textContent = '';
+    } else if (refreshedBtn.disabled) {
+      const waitRemaining = Math.ceil((minDurationMs - elapsed) / 1000);
+      const wm = Math.floor(waitRemaining / 60);
+      const ws = waitRemaining % 60;
+      btnLabel.textContent = `Available in ${wm > 0 ? wm + 'm ' : ''}${ws}s`;
+    }
+
+    if (rem <= 0) {
+      clearInterval(timerInterval);
+      activeBreakTimerInterval = null;
+      if (activeBreathInterval !== null) {
+        clearInterval(activeBreathInterval);
+        activeBreathInterval = null;
+      }
+      timerLabelEl.textContent = 'Break complete!';
+      refreshedBtn.disabled = false;
+      btnLabel.textContent = '';
+    }
+  }
+
+  timerInterval = setInterval(tick, 500);
+  activeBreakTimerInterval = timerInterval;
+  tick();
+
+  refreshedBtn.addEventListener('click', () => {
+    removeOverlay(); // removeOverlay handles clearing all intervals
+  });
+
+  backdrop.appendChild(card);
+  root.appendChild(backdrop);
+}
+
+/* ─── Build and show the warning overlay ─────────────────────────────────── */
 /**
  * @param {'warning'|'strong'} level
  * @param {string} motivationalMessage
- * @param {{ scrollCount: number, sessionDuration: number }} stats
+ * @param {{ scrollCount: number, keyPressCount: number, sessionDuration: number }} stats
  */
 function showDoomScrollWarning(level, motivationalMessage, stats) {
-  // Respect snooze
   if (Date.now() < snoozedUntil) return;
 
-  // Remove any pre-existing overlay
   removeOverlay();
 
   const isStrong = level === 'strong';
   const root     = getShadowRoot();
 
-  // Make the host element interactive while the overlay is open
   shadowHost.style.pointerEvents = 'all';
   shadowHost.style.width  = '100vw';
   shadowHost.style.height = '100vh';
 
-  /* ── Backdrop ── */
   const backdrop = document.createElement('div');
   backdrop.className = 'dsb-backdrop' + (isStrong ? ' dsb-strong' : '');
 
-  /* ── Card ── */
   const card = document.createElement('div');
   card.className = 'dsb-card' + (isStrong ? ' dsb-strong' : '');
 
-  /* ── Icon ── */
   const icon = document.createElement('div');
   icon.className = 'dsb-icon';
   icon.textContent = isStrong ? '🚨' : '⚠️';
   card.appendChild(icon);
 
-  /* ── Title ── */
   const title = document.createElement('div');
   title.className = 'dsb-title';
   const minutes = Math.round(stats.sessionDuration / 60);
   title.textContent = isStrong
-    ? `⛔ Serious Doom Scroll Alert`
+    ? '⛔ Serious Doom Scroll Alert'
     : `⚠️ You've been doom scrolling for ${minutes} min`;
   card.appendChild(title);
 
-  /* ── Motivational message ── */
   const msg = document.createElement('div');
   msg.className = 'dsb-message';
   msg.textContent = motivationalMessage;
   card.appendChild(msg);
 
-  /* ── Stats row ── */
   const statsRow = document.createElement('div');
   statsRow.className = 'dsb-stats';
   statsRow.innerHTML = `
@@ -294,7 +503,6 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
   `;
   card.appendChild(statsRow);
 
-  /* ── Countdown timer (strong warning only) ── */
   let continueBtn;
   if (isStrong) {
     const timerEl = document.createElement('div');
@@ -307,7 +515,6 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
     timerLabel.textContent = 'seconds before you can continue';
     card.appendChild(timerLabel);
 
-    // Start the countdown; enable the continue button when it reaches 0
     let remaining = 60;
     const countdownId = setInterval(() => {
       remaining--;
@@ -324,17 +531,23 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
   divider.className = 'dsb-divider';
   card.appendChild(divider);
 
-  /* ── Action buttons ── */
   const actions = document.createElement('div');
   actions.className = 'dsb-actions';
 
-  // "Take a Break" — close the tab
+  // "Take a Break" — show the break screen instead of closing the tab
   const breakBtn = document.createElement('button');
   breakBtn.className = 'dsb-btn dsb-btn-primary';
   breakBtn.textContent = '🌿 Take a Break';
   breakBtn.addEventListener('click', () => {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'TAKE_BREAK',
+        hostname: window.location.hostname,
+        duration: BREAK_DURATION
+      });
+    } catch (_) {}
     removeOverlay();
-    window.close(); // closes the tab (works when opened by a script); falls back gracefully
+    showBreakScreen(BREAK_DURATION);
   });
   actions.appendChild(breakBtn);
 
@@ -344,10 +557,9 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
   snoozeBtn.textContent = '⏱ Give me 5 more minutes';
   snoozeBtn.addEventListener('click', () => {
     snoozedUntil = Date.now() + SNOOZE_DURATION;
-    // Notify background to track the snooze
     try {
       chrome.runtime.sendMessage({ type: 'SNOOZE' });
-    } catch (_) { /* ignore if context is invalidated */ }
+    } catch (_) {}
     removeOverlay();
   });
   actions.appendChild(snoozeBtn);
@@ -358,7 +570,13 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
     continueBtn.className = 'dsb-btn dsb-btn-secondary';
     continueBtn.textContent = 'Continue Scrolling';
     continueBtn.disabled = true;
-    continueBtn.addEventListener('click', () => removeOverlay());
+    continueBtn.addEventListener('click', () => {
+      // Notify background to re-arm warnings after CONTINUE_REARM_DELAY
+      try {
+        chrome.runtime.sendMessage({ type: 'CONTINUE_SCROLLING' });
+      } catch (_) {}
+      removeOverlay();
+    });
     actions.appendChild(continueBtn);
   }
 
@@ -368,5 +586,5 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
 }
 
 /* ─── Expose to content.js ───────────────────────────────────────────────── */
-// content.js checks `typeof showDoomScrollWarning === 'function'` before calling.
 window.showDoomScrollWarning = showDoomScrollWarning;
+window.showBreakScreen       = showBreakScreen;
