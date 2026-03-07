@@ -1,0 +1,442 @@
+/**
+ * popup.css — Doom Scroll Blocker popup styles.
+ *
+ * Design: dark theme, teal/cyan accent, 380px width, CSS Grid/Flexbox layout.
+ * All class names prefixed with `dsb-` to avoid collisions.
+ */
+
+/* ─── CSS Variables ──────────────────────────────────────────────────────── */
+:root {
+  --dsb-bg:           #0f0f1a;
+  --dsb-surface:      #1a1a2e;
+  --dsb-surface2:     #16213e;
+  --dsb-accent:       #00bcd4;
+  --dsb-accent-hover: #00acc1;
+  --dsb-danger:       #f44336;
+  --dsb-warn:         #ff9800;
+  --dsb-safe:         #4caf50;
+  --dsb-text:         #e0e0e0;
+  --dsb-text-muted:   #9e9e9e;
+  --dsb-border:       rgba(255, 255, 255, 0.08);
+  --dsb-radius:       10px;
+  --dsb-radius-sm:    6px;
+  --dsb-transition:   0.2s ease;
+}
+
+/* ─── Reset & base ───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 380px;
+  min-height: 300px;
+  background: var(--dsb-bg);
+  color: var(--dsb-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+.dsb-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--dsb-surface);
+  border-bottom: 1px solid var(--dsb-border);
+}
+
+.dsb-logo {
+  color: var(--dsb-accent);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dsb-header-text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsb-header-text h1 {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ─── Status badge ───────────────────────────────────────────────────────── */
+.dsb-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dsb-badge-active {
+  background: rgba(76, 175, 80, 0.2);
+  color: var(--dsb-safe);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.dsb-badge-paused {
+  background: rgba(158, 158, 158, 0.2);
+  color: var(--dsb-text-muted);
+  border: 1px solid rgba(158, 158, 158, 0.3);
+}
+
+/* ─── Toggle switch ──────────────────────────────────────────────────────── */
+.dsb-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background var(--dsb-transition);
+  flex-shrink: 0;
+}
+
+.dsb-toggle.dsb-toggle-on {
+  background: var(--dsb-accent);
+}
+
+.dsb-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--dsb-transition);
+}
+
+.dsb-toggle.dsb-toggle-on .dsb-toggle-knob {
+  transform: translateX(18px);
+}
+
+/* ─── Panels ─────────────────────────────────────────────────────────────── */
+.dsb-panel {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--dsb-border);
+}
+
+.dsb-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dsb-text-muted);
+  margin-bottom: 10px;
+}
+
+.dsb-sub-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsb-text-muted);
+  margin-bottom: 8px;
+}
+
+/* ─── Session panel ──────────────────────────────────────────────────────── */
+.dsb-session-site {
+  font-size: 13px;
+  color: var(--dsb-accent);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsb-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.dsb-label {
+  font-size: 13px;
+  color: var(--dsb-text-muted);
+}
+
+.dsb-score-pill {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 3px 14px;
+  border-radius: 20px;
+  background: var(--dsb-surface2);
+  transition: background var(--dsb-transition), color var(--dsb-transition);
+}
+
+.dsb-score-safe   { background: rgba(76, 175, 80, 0.2);   color: var(--dsb-safe);   }
+.dsb-score-warn   { background: rgba(255, 152, 0, 0.2);   color: var(--dsb-warn);   }
+.dsb-score-danger { background: rgba(244, 67, 54, 0.2);   color: var(--dsb-danger); }
+
+.dsb-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.dsb-metric {
+  background: var(--dsb-surface2);
+  border-radius: var(--dsb-radius-sm);
+  padding: 8px;
+  text-align: center;
+}
+
+.dsb-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--dsb-accent);
+}
+
+.dsb-metric-label {
+  font-size: 10px;
+  color: var(--dsb-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+/* ─── Statistics panel ───────────────────────────────────────────────────── */
+.dsb-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dsb-stat-item {
+  background: var(--dsb-surface2);
+  border-radius: var(--dsb-radius-sm);
+  padding: 10px;
+  text-align: center;
+}
+
+.dsb-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--dsb-accent);
+}
+
+.dsb-stat-label {
+  font-size: 10px;
+  color: var(--dsb-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.dsb-divider {
+  height: 1px;
+  background: var(--dsb-border);
+  margin: 10px 0;
+}
+
+/* ─── Sites list ─────────────────────────────────────────────────────────── */
+.dsb-sites-list {
+  list-style: none;
+}
+
+.dsb-site-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: var(--dsb-radius-sm);
+  font-size: 12px;
+}
+
+.dsb-site-item:nth-child(odd) {
+  background: var(--dsb-surface2);
+}
+
+.dsb-site-name { color: var(--dsb-text); }
+.dsb-site-warn { color: var(--dsb-warn); font-weight: 600; }
+
+.dsb-sites-empty {
+  font-size: 12px;
+  color: var(--dsb-text-muted);
+  padding: 4px 0;
+}
+
+/* ─── Settings panel ─────────────────────────────────────────────────────── */
+.dsb-collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+}
+
+.dsb-collapsible .dsb-panel-title {
+  margin-bottom: 0;
+}
+
+.dsb-chevron {
+  color: var(--dsb-text-muted);
+  transition: transform var(--dsb-transition);
+  flex-shrink: 0;
+}
+
+.dsb-collapsible-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dsb-collapsible-body[hidden] { display: none; }
+
+.dsb-field-label {
+  font-size: 12px;
+  color: var(--dsb-text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.dsb-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ─── Sensitivity slider ─────────────────────────────────────────────────── */
+.dsb-sensitivity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsb-sensitivity-label {
+  font-size: 11px;
+  color: var(--dsb-text-muted);
+  flex-shrink: 0;
+}
+
+.dsb-slider {
+  flex: 1;
+  accent-color: var(--dsb-accent);
+  cursor: pointer;
+}
+
+.dsb-sensitivity-hint {
+  font-size: 12px;
+  color: var(--dsb-accent);
+  text-align: center;
+}
+
+/* ─── Checkbox ───────────────────────────────────────────────────────────── */
+.dsb-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsb-accent);
+  cursor: pointer;
+}
+
+/* ─── Whitelist ──────────────────────────────────────────────────────────── */
+.dsb-whitelist-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.dsb-text-input {
+  flex: 1;
+  background: var(--dsb-surface2);
+  border: 1px solid var(--dsb-border);
+  border-radius: var(--dsb-radius-sm);
+  color: var(--dsb-text);
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color var(--dsb-transition);
+}
+
+.dsb-text-input:focus {
+  border-color: var(--dsb-accent);
+}
+
+.dsb-whitelist-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.dsb-whitelist-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--dsb-surface2);
+  border-radius: var(--dsb-radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.dsb-btn-remove {
+  background: none;
+  border: none;
+  color: var(--dsb-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.dsb-btn-remove:hover { color: var(--dsb-danger); }
+
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
+.dsb-btn {
+  background: var(--dsb-surface2);
+  color: var(--dsb-text);
+  border: 1px solid var(--dsb-border);
+  border-radius: var(--dsb-radius-sm);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--dsb-transition), border-color var(--dsb-transition);
+}
+
+.dsb-btn:hover { border-color: var(--dsb-accent); opacity: 0.9; }
+
+.dsb-btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dsb-btn-danger {
+  color: var(--dsb-danger);
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.dsb-btn-danger:hover {
+  background: rgba(244, 67, 54, 0.1);
+  border-color: var(--dsb-danger);
+  opacity: 1;
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────────────── */
+.dsb-footer {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+/* ─── Scrollbar (thin, themed) ───────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: var(--dsb-bg); }
+::-webkit-scrollbar-thumb  { background: var(--dsb-border); border-radius: 2px; }

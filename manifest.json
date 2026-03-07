@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Doom Scroll Blocker",
+  "version": "1.0.0",
+  "description": "Helps you avoid endless scrolling on short-form content while allowing long videos to play uninterrupted.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "alarms",
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.instagram.com/*",
+        "*://*.tiktok.com/*",
+        "*://*.twitter.com/*",
+        "*://*.x.com/*"
+      ],
+      "js": [
+        "utils/constants.js",
+        "content/overlay.js",
+        "content/content.js"
+      ],
+      "css": [
+        "content/overlay.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

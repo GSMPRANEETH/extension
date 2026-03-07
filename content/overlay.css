@@ -1,0 +1,26 @@
+/**
+ * overlay.css — Doom Scroll Blocker overlay styles loaded at document level.
+ *
+ * The overlay itself is rendered inside a Shadow DOM (see overlay.js), so
+ * these document-level styles are intentionally minimal. Their primary role
+ * is to reset any host-page styles that could "bleed" through the shadow
+ * boundary for inherited properties (e.g., font-size on :root).
+ *
+ * All component-specific styles live in overlay.js → getDSBStyles().
+ */
+
+/* Ensure the shadow host element never occupies layout space by default. */
+#dsb-shadow-host {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  z-index: 2147483647 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+  pointer-events: none !important;
+}
