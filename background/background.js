@@ -16,9 +16,9 @@
  * here. Keep in sync with utils/constants.js.
  * ─────────────────────────────────────────────────────────────────────────── */
 const SCORE_THRESHOLDS = {
-  SAFE: 40,
-  WARNING: 60,
-  STRONG_WARNING: 80
+  SAFE: 25,
+  WARNING: 40,
+  STRONG_WARNING: 65
 };
 
 const MOTIVATIONAL_MESSAGES = [
@@ -63,25 +63,50 @@ let sessions = {}; // { [tabId]: SessionState }
  * Inputs come from the ACTIVITY_REPORT message sent by the content script.
  *
  * score = 0
- *  +30  sessionDuration > 600s   (>10 min on page)
- *  +25  scrollCount > 100        (heavy scrolling)
- *  +15  keyPressCount > 50       (repeated key presses)
- *  +20  bottomReachedCount > 5   (hitting bottom of infinite feed)
- *  +25  shortVideoCount > 10     (many short videos consumed)
- *  -10  idleTime < 30s           (constant engagement — low idle)
+ *  +10  sessionDuration > 60s    (> 1 min on page)
+ *  +15  sessionDuration > 180s   (> 3 min)
+ *  +15  sessionDuration > 300s   (> 5 min, total +40 if >5min)
+ *  +10  scrollCount > 10
+ *  +10  scrollCount > 30
+ *  +10  scrollCount > 60
+ *  +10  keyPressCount > 10
+ *  +10  keyPressCount > 30
+ *  +15  bottomReachedCount > 3   (hitting bottom of infinite feed)
+ *  +10  shortVideoCount > 3      (short videos consumed)
+ *  +10  shortVideoCount > 8
+ *  +5   idleTime < 10s           (constant engagement — low idle)
  *  -50  longVideoDetected        (watching long content — bypass)
  *
  * ─────────────────────────────────────────────────────────────────────────── */
 function calculateScore(data) {
   let score = 0;
 
-  if (data.sessionDuration > 600)    score += 30;
-  if (data.scrollCount > 100)        score += 25;
-  if (data.keyPressCount > 50)       score += 15;
-  if (data.bottomReachedCount > 5)   score += 20;
-  if (data.shortVideoCount > 10)     score += 25;
-  if (data.idleTime < 30)            score -= 10;
-  if (data.longVideoDetected)        score -= 50;
+  // Session duration: graduated scoring
+  if (data.sessionDuration > 60)        score += 10;
+  if (data.sessionDuration > 180)       score += 15;
+  if (data.sessionDuration > 300)       score += 15;
+
+  // Scroll count: graduated
+  if (data.scrollCount > 10)            score += 10;
+  if (data.scrollCount > 30)            score += 10;
+  if (data.scrollCount > 60)            score += 10;
+
+  // Key presses: graduated
+  if (data.keyPressCount > 10)          score += 10;
+  if (data.keyPressCount > 30)          score += 10;
+
+  // Bottom reached (infinite scroll)
+  if (data.bottomReachedCount > 3)      score += 15;
+
+  // Short videos consumed
+  if (data.shortVideoCount > 3)         score += 10;
+  if (data.shortVideoCount > 8)         score += 10;
+
+  // Active engagement (low idle = constantly scrolling)
+  if (data.idleTime < 10)               score += 5;
+
+  // Long video bypass — major negative score
+  if (data.longVideoDetected)           score -= 50;
 
   return score;
 }
@@ -240,6 +265,14 @@ async function handleActivityReport(tabId, data) {
     session.lastScore = score;
     session.hostname  = data.hostname;
     session.url       = data.url;
+
+    // Store latest raw activity data so the popup can show live metrics
+    session.latestScrollCount       = data.scrollCount;
+    session.latestKeyPressCount     = data.keyPressCount;
+    session.latestSessionDuration   = data.sessionDuration;
+    session.latestBottomReachedCount = data.bottomReachedCount;
+    session.latestShortVideoCount   = data.shortVideoCount;
+    session.latestLongVideoDetected = data.longVideoDetected;
 
     // ── Snooze check ──────────────────────────────────────────────────────
     // If the user clicked "Give me 5 more minutes", skip warnings until snooze expires.
