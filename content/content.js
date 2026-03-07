@@ -34,6 +34,14 @@ function classifyPage() {
   const hostname = window.location.hostname.toLowerCase();
   const pathname = window.location.pathname.toLowerCase();
 
+  /**
+   * Safely check if `hostname` is exactly `domain` or a subdomain of it.
+   * Prevents spoofing via hostnames like `evil-youtube.com.attacker.com`.
+   */
+  function matchHost(domain) {
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
   // ── PRODUCTIVE / EXEMPT — Never trigger warnings ──────────────────────
   const productivePatterns = [
     // Educational institutions
@@ -105,19 +113,19 @@ function classifyPage() {
   }
 
   // ── SHORT FORM FEED — Highest doom score weight ──────────────────────
-  if (hostname.includes('youtube.com') && pathname.includes('/shorts')) return 'short_form_feed';
-  if (hostname.includes('instagram.com') && (pathname.includes('/reels') || pathname.includes('/reel'))) return 'short_form_feed';
-  if (hostname.includes('tiktok.com')) return 'short_form_feed';
+  if (matchHost('youtube.com') && pathname.includes('/shorts')) return 'short_form_feed';
+  if (matchHost('instagram.com') && (pathname.includes('/reels') || pathname.includes('/reel'))) return 'short_form_feed';
+  if (matchHost('tiktok.com')) return 'short_form_feed';
 
   // ── VIDEO PLAYER — Low weight (watching long content is fine) ─────────
-  if (hostname.includes('youtube.com') && pathname.includes('/watch')) {
+  if (matchHost('youtube.com') && pathname.includes('/watch')) {
     // If user has scrolled past the video into comments, treat as comments_section
     if (isScrolledPastVideo()) return 'comments_section';
     return 'video_player';
   }
-  if (hostname.includes('vimeo.com')) return 'video_player';
-  if (hostname.includes('netflix.com') && pathname.includes('/watch')) return 'video_player';
-  if (hostname.includes('primevideo.com') && pathname.includes('/detail')) return 'video_player';
+  if (matchHost('vimeo.com')) return 'video_player';
+  if (matchHost('netflix.com') && pathname.includes('/watch')) return 'video_player';
+  if (matchHost('primevideo.com') && pathname.includes('/detail')) return 'video_player';
 
   // ── SOCIAL FEED — Medium-high weight ──────────────────────────────────
   const socialFeedSites = [
@@ -133,7 +141,7 @@ function classifyPage() {
   ];
 
   for (const site of socialFeedSites) {
-    if (hostname.includes(site.host)) {
+    if (matchHost(site.host)) {
       if (site.paths.some(p => pathname === p || pathname.startsWith(p))) {
         return 'social_feed';
       }
@@ -141,13 +149,13 @@ function classifyPage() {
   }
 
   // YouTube home / subscriptions / trending
-  if (hostname.includes('youtube.com') &&
+  if (matchHost('youtube.com') &&
     (pathname === '/' || pathname.startsWith('/feed/'))) {
     return 'social_feed';
   }
 
   // ── COMMENTS SECTION ──────────────────────────────────────────────────
-  if (hostname.includes('reddit.com') && pathname.includes('/comments/')) return 'comments_section';
+  if (matchHost('reddit.com') && pathname.includes('/comments/')) return 'comments_section';
 
   // ── NEWS FEED ──────────────────────────────────────────────────────────
   const newsSites = [
@@ -157,12 +165,12 @@ function classifyPage() {
     'engadget.com', 'gizmodo.com', 'kotaku.com', 'ign.com',
     'news.google.com', 'news.ycombinator.com'
   ];
-  if (newsSites.some(s => hostname.includes(s))) return 'news_feed';
+  if (newsSites.some(s => matchHost(s))) return 'news_feed';
 
   // ── SEARCH ────────────────────────────────────────────────────────────
-  if (hostname.includes('google.com') && pathname.startsWith('/search')) return 'search';
-  if (hostname.includes('bing.com')   && pathname.startsWith('/search')) return 'search';
-  if (hostname.includes('duckduckgo.com')) return 'search';
+  if (matchHost('google.com') && pathname.startsWith('/search')) return 'search';
+  if (matchHost('bing.com')   && pathname.startsWith('/search')) return 'search';
+  if (matchHost('duckduckgo.com')) return 'search';
 
   // ── Infinite scroll indicators on unknown pages ───────────────────────
   const hasInfiniteScroll = document.querySelector(
@@ -190,7 +198,11 @@ function getSection() {
   const pathname = window.location.pathname.toLowerCase();
   const hostname = window.location.hostname.toLowerCase();
 
-  if (hostname.includes('youtube.com')) {
+  function matchHost(domain) {
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
+  if (matchHost('youtube.com')) {
     if (pathname.includes('/shorts'))               return 'yt-shorts';
     if (pathname.includes('/watch'))                return 'yt-watch';
     if (pathname === '/' || pathname === '')         return 'yt-home';
@@ -201,14 +213,14 @@ function getSection() {
     return 'yt-other';
   }
 
-  if (hostname.includes('reddit.com')) {
+  if (matchHost('reddit.com')) {
     if (pathname === '/' || pathname === '/popular' || pathname === '/all') return 'reddit-feed';
     if (pathname.includes('/comments/'))            return 'reddit-comments';
     if (pathname.startsWith('/r/') && !pathname.includes('/comments/')) return 'reddit-subreddit';
     return 'reddit-other';
   }
 
-  if (hostname.includes('instagram.com')) {
+  if (matchHost('instagram.com')) {
     if (pathname.includes('/reels') || pathname.includes('/reel')) return 'ig-reels';
     if (pathname === '/' || pathname === '')         return 'ig-feed';
     if (pathname.includes('/explore'))              return 'ig-explore';
@@ -216,7 +228,7 @@ function getSection() {
     return 'ig-profile';
   }
 
-  if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+  if (matchHost('twitter.com') || matchHost('x.com')) {
     if (pathname === '/' || pathname === '/home')   return 'tw-home';
     if (pathname.includes('/explore') || pathname.includes('/search')) return 'tw-explore';
     if (pathname.includes('/status/'))              return 'tw-thread';
