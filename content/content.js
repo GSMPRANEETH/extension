@@ -421,8 +421,24 @@ const sectionCheckInterval = setInterval(() => {
   }
 }, SECTION_CHECK_INTERVAL);
 
+/* ─── Extension context guard ────────────────────────────────────────────── */
+/**
+ * Returns false when the extension has been reloaded / uninstalled and this
+ * content script is now orphaned.  Avoids the "Extension context invalidated"
+ * error and stops the reporting interval automatically.
+ */
+function isExtensionContextValid() {
+  try { return !!chrome.runtime?.id; } catch (e) { return false; }
+}
+
 /* ─── Build and send ACTIVITY_REPORT ─────────────────────────────────────── */
 function sendActivityReport() {
+  // Stop sending if the extension context has been invalidated (e.g. after reload)
+  if (!isExtensionContextValid()) {
+    clearInterval(reportIntervalId);
+    return;
+  }
+
   // Skip entirely for productive pages — zero false positives
   if (pageContext === 'productive') return;
 

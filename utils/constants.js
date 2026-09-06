@@ -78,6 +78,7 @@ const SWIPE_THRESHOLD            = 50;     // minimum touch distance (px) to cou
 const POPUP_REFRESH_INTERVAL     = 5000;   // Popup auto-refresh interval (5 seconds)
 const BREAK_DURATION             = 600000; // 10 minutes — default break duration
 const BREAK_MIN_DURATION         = 120000; // 2 minutes — minimum break before "I'm back" is enabled
+const CONTINUE_REARM_DELAY       = 180;    // seconds after "Continue Scrolling" before warnings re-trigger
 const SECTION_CHECK_INTERVAL     = 1000;   // 1 second — how often to poll for URL/section changes
 const VIDEO_SCROLL_THRESHOLD     = 0.2;    // fraction of viewport height — player is "past" if bottom < 20%
 const MIN_CODE_BLOCKS_PRODUCTIVE = 3;      // minimum <pre code> blocks to classify page as productive
