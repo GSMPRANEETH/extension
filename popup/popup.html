@@ -25,6 +25,33 @@
     </button>
   </header>
 
+  <!-- ── Onboarding Section ──────────────────────────────────────────────────────── -->
+  <section class="dsb-panel" id="dsb-onboarding" style="display:none">
+    <h2 class="dsb-panel-title">Welcome to Doom Scroll Blocker</h2>
+    <div id="dsb-onboarding-steps">
+      <div class="dsb-onboarding-step" id="dsb-onboarding-step1">
+        <h3>How it works</h3>
+        <p>The extension monitors your activity on supported sites and calculates a doom score based on your scrolling, key presses, and time spent.</p>
+      </div>
+      <div class="dsb-onboarding-step" id="dsb-onboarding-step2">
+        <h3>What is doom-scrolling?</h3>
+        <p>Doom-scrolling is the tendency to continuously scroll through negative news or short-form content, which can lead to anxiety and wasted time.</p>
+      </div>
+      <div class="dsb-onboarding-step" id="dsb-onboarding-step3">
+        <h3>Configure sensitivity</h3>
+        <p>Adjust the detection sensitivity in settings to match your habits.</p>
+      </div>
+      <div class="dsb-onboarding-step" id="dsb-onboarding-step4">
+        <h3>Benefits of taking breaks</h3>
+        <p>Regular breaks help reduce eye strain, improve focus, and break the cycle of compulsive scrolling.</p>
+      </div>
+    </div>
+    <div id="dsb-onboarding-nav">
+      <button id="dsb-onboarding-prev" class="dsb-btn dsb-btn-secondary">Previous</button>
+      <button id="dsb-onboarding-next" class="dsb-btn dsb-btn-primary">Next</button>
+    </div>
+  </section>
+
   <!-- ── Current Session Panel ───────────────────────────────────────── -->
   <section class="dsb-panel" id="dsb-session-panel">
     <h2 class="dsb-panel-title">Current Session</h2>
@@ -91,6 +118,59 @@
     </ul>
   </section>
 
+  <!-- ── Insights Panel ────────────────────────────────────────────── -->
+  <section class="dsb-panel" id="dsb-insights-panel">
+    <div class="dsb-collapsible" id="dsb-insights-toggle" aria-expanded="false">
+      <h2 class="dsb-panel-title">📊 Insights & Trends</h2>
+      <svg class="dsb-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </div>
+
+    <div class="dsb-collapsible-body" id="dsb-insights-body" hidden>
+      <!-- Time period selector -->
+      <div class="dsb-field-row">
+        <label class="dsb-field-label">Time Period:</label>
+        <div class="dsb-period-selector">
+          <button id="dsb-period-daily" class="dsb-btn dsb-btn-sm dsb-period-active">Daily</button>
+          <button id="dsb-period-weekly" class="dsb-btn dsb-btn-sm">Weekly</button>
+          <button id="dsb-period-monthly" class="dsb-btn dsb-btn-sm">Monthly</button>
+        </div>
+      </div>
+
+      <!-- Charts container -->
+      <div id="dsb-charts-container">
+        <!-- Charts will be inserted here by JavaScript -->
+        <canvas id="dsb-trends-chart" width="400" height="200"></canvas>
+        <canvas id="dsb-sites-chart" width="400" height="200"></canvas>
+      </div>
+
+      <!-- Insights container -->
+      <div id="dsb-insights-container">
+        <div class="dsb-insight-item">
+          <h3 class="dsb-insight-title">Focus Sessions</h3>
+          <p class="dsb-insight-value" id="dsb-focus-sessions">0</p>
+          <p class="dsb-insight-label">Sessions under warning threshold</p>
+        </div>
+        <div class="dsb-insight-item">
+          <h3 class="dsb-insight-title">Time Saved</h3>
+          <p class="dsb-insight-value" id="dsb-time-saved">0m</p>
+          <p class="dsb-insight-label">Estimated time saved</p>
+        </div>
+        <div class="dsb-insight-item">
+          <h3 class="dsb-insight-title">Improvement Trend</h3>
+          <p class="dsb-insight-value" id="dsb-improvement-trend">—</p>
+          <p class="dsb-insight-label">vs last period</p>
+        </div>
+      </div>
+
+      <!-- Export button -->
+      <div class="dsb-field-row">
+        <button id="dsb-export-stats-btn" class="dsb-btn dsb-btn-sm">Export Statistics (CSV)</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ── Settings Panel ──────────────────────────────────────────────── -->
   <section class="dsb-panel" id="dsb-settings-panel">
     <!-- Collapsible header -->
@@ -124,6 +204,61 @@
         <button id="dsb-whitelist-add" class="dsb-btn dsb-btn-sm">Add</button>
       </div>
       <ul class="dsb-whitelist-list" id="dsb-whitelist-list"></ul>
+
+      <!-- Advanced Customization -->
+      <div class="dsb-field-row">
+        <label class="dsb-field-label" for="dsb-advanced-checkbox">Advanced Customization</label>
+        <input type="checkbox" id="dsb-advanced-checkbox" class="dsb-checkbox" />
+      </div>
+      <div id="dsb-advanced-settings" style="display:none; margin-top: 10px;">
+        <!-- Context Multipliers -->
+        <div class="dsb-advanced-section">
+          <label class="dsb-field-label">Context Multipliers</label>
+          <div id="dsb-context-multipliers">
+            <!-- Will be populated by JS -->
+          </div>
+        </div>
+
+        <!-- Score Thresholds -->
+        <div class="dsb-advanced-section">
+          <label class="dsb-field-label">Score Thresholds</label>
+          <div id="dsb-score-thresholds">
+            <!-- Will be populated by JS -->
+          </div>
+        </div>
+
+        <!-- Motivational Message Frequency -->
+        <div class="dsb-field-row">
+          <label class="dsb-field-label" for="dsb-motiv-frequency">Motivational Message Frequency</label>
+          <input type="range" id="dsb-motiv-frequency" min="0" max="1" step="0.1" value="1" class="dsb-slider" />
+          <span id="dsb-motiv-frequency-value">100%</span>
+        </div>
+
+        <!-- Break Duration -->
+        <div class="dsb-field-row">
+          <label class="dsb-field-label" for="dsb-break-duration">Break Duration (minutes)</label>
+          <input type="range" id="dsb-break-duration" min="1" max="30" step="1" value="10" class="dsb-slider" />
+          <span id="dsb-break-duration-value">10</span> min
+        </div>
+      </div>
+
+      <!-- Data Export/Import -->
+      <div class="dsb-field-row">
+        <label class="dsb-field-label">Data Management</label>
+      </div>
+      <div class="dsb-advanced-section">
+        <div class="dsb-field-row">
+          <button id="dsb-export-btn" class="dsb-btn dsb-btn-sm">Export Settings</button>
+        </div>
+        <div class="dsb-field-row">
+          <input type="file" id="dsb-import-input" accept=".json" style="display:none;">
+          <button id="dsb-import-trigger" class="dsb-btn dsb-btn-sm">Import Settings</button>
+          <span id="dsb-import-status" class="dsb-import-status"></span>
+        </div>
+        <div class="dsb-field-row">
+          <button id="dsb-reset-all-btn" class="dsb-btn dsb-btn-danger dsb-btn-sm">Reset All Settings</button>
+        </div>
+      </div>
     </div>
   </section>
 

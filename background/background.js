@@ -9,49 +9,95 @@
  *  5. Use chrome.alarms for periodic cleanup of stale session data.
  */
 
-'use strict';
-
-/* ─── Inline constants (mirrored from utils/constants.js) ────────────────────
- * Service workers cannot load content-script files, so constants are duplicated
- * here. Keep in sync with utils/constants.js.
- * ─────────────────────────────────────────────────────────────────────────── */
-const SCORE_THRESHOLDS = {
-  SAFE: 25,
-  WARNING: 40,
-  STRONG_WARNING: 65
+/* ─── Load configuration from storage with defaults ────────────────────────────────────── */
+// Default configuration (matches utils/constants.js)
+const DEFAULT_CONFIG = {
+  /* ─── Sites monitored by this extension ─────────────────────────────────────── */
+  doomScrollSites: [
+    'youtube.com', 'instagram.com', 'tiktok.com', 'twitter.com', 'x.com',
+    'reddit.com', 'facebook.com', 'linkedin.com', 'pinterest.com',
+    'tumblr.com', '9gag.com', 'buzzfeed.com', 'imgur.com',
+    'news.ycombinator.com', 'digg.com', 'quora.com'
+  ],
+  /* ─── Sites that should NEVER be blocked ─────────────────────────────────────── */
+  productiveSites: [
+    'github.com', 'gitlab.com', 'bitbucket.org',
+    'stackoverflow.com', 'stackexchange.com',
+    'developer.mozilla.org', 'w3schools.com',
+    'docs.google.com', 'drive.google.com',
+    'notion.so', 'trello.com', 'asana.com',
+    'wikipedia.org', 'wikimedia.org',
+    'arxiv.org', 'scholar.google.com',
+    'coursera.org', 'udemy.com', 'edx.org', 'khanacademy.org',
+    'leetcode.com', 'hackerrank.com', 'codeforces.com',
+    'geeksforgeeks.org', 'freecodecamp.org',
+    'mail.google.com', 'outlook.live.com',
+    'calendar.google.com', 'slack.com',
+    'teams.microsoft.com', 'zoom.us'
+  ],
+  /* ─── Context multipliers applied to raw doom scores ─────────────────────── */
+  contextMultipliers: {
+    'short_form_feed':  1.5,  // Shorts / Reels / TikTok — maximum weight
+    'social_feed':      1.2,  // Twitter/Reddit/Facebook feed — high weight
+    'comments_section': 0.8,  // Comments — moderate
+    'news_feed':        1.0,  // News — normal weight
+    'video_player':     0.3,  // Watching long videos — very low
+    'search':           0.2,  // Search results — very low
+    'productive':       0.0,  // Educational/work — NEVER trigger
+    'unknown':          0.5   // Unknown sites — cautious, low weight
+  },
+  /* ─── Score thresholds for the doom-scroll detection algorithm ───────────── */
+  scoreThresholds: {
+    SAFE: 25,
+    WARNING: 40,
+    STRONG_WARNING: 65
+  },
+  /* ─── Motivational messages shown in overlays (randomly selected) ─────────── */
+  motivationalMessages: [
+    "Your future self will thank you for stopping now.",
+    "Time is your most valuable asset. Invest it wisely.",
+    "Every minute counts. What could you accomplish instead?",
+    "Break the scroll cycle. Your mind deserves a rest.",
+    "The feed will still be here later. Your time won't.",
+    "Step away and stretch. Your body will thank you.",
+    "Mindful browsing > mindless scrolling.",
+    "You've consumed enough content. Time to create something.",
+    "Take a deep breath. Is this scroll adding value to your life?",
+    "Remember why you opened your browser. Was it for this?"
+  ],
+  /* ─── Timing constants (all values in milliseconds unless stated) ─────────── */
+  activityReportInterval: 15000, // Send activity report every 15 seconds
+  idleThreshold:             120000, // 2 minutes — stop tracking when idle
+  scrollThrottle:            200,    // Throttle scroll events to once per 200ms
+  snoozeDuration:            300000, // 5 minutes — "Give me 5 more minutes" snooze
+  longVideoThreshold:        600,    // 10 minutes in seconds — bypass warnings
+  shortVideoThreshold:       120,    // 2 minutes in seconds — counts as short video
+  bottomDetectionThreshold:  150,    // px from bottom to count as "reached bottom"
+  wheelDeltaThreshold:       30,     // minimum wheel deltaY to count as a scroll
+  swipeThreshold:            50,     // minimum touch distance (px) to count as a swipe
+  popupRefreshInterval:      5000,   // Popup auto-refresh interval (5 seconds)
+  breakDuration:             600000, // 10 minutes — default break duration
+  breakMinDuration:          120000, // 2 minutes — minimum break before "I'm back" is enabled
+  continueRearmDelay:        180,    // seconds after "Continue Scrolling" before warnings re-trigger
+  sectionCheckInterval:      1000,   // 1 second — how often to poll for URL/section changes
+  videoScrollThreshold:      0.2,    // fraction of viewport height — player is "past" if bottom < 20%
+  minCodeBlocksProductive:   3,      // minimum <pre code> blocks to classify page as productive
+  /* ─── Customizable settings (exposed in UI) ──────────────────────── */
+  motivationalMessageFrequency: 1.0, // Probability of showing a motivational message (0-1),
+  STRONG_WARNING_FOLLOWUP: 300    // 5 minutes — time after strong warning before final reminder
 };
 
-const CONTEXT_MULTIPLIERS = {
-  'short_form_feed':  1.5,
-  'social_feed':      1.2,
-  'comments_section': 0.8,
-  'news_feed':        1.0,
-  'video_player':     0.3,
-  'search':           0.2,
-  'productive':       0.0,
-  'unknown':          0.5
-};
+let CONFIG = {};
 
-const MOTIVATIONAL_MESSAGES = [
-  "Your future self will thank you for stopping now.",
-  "Time is your most valuable asset. Invest it wisely.",
-  "Every minute counts. What could you accomplish instead?",
-  "Break the scroll cycle. Your mind deserves a rest.",
-  "The feed will still be here later. Your time won't.",
-  "Step away and stretch. Your body will thank you.",
-  "Mindful browsing > mindless scrolling.",
-  "You've consumed enough content. Time to create something.",
-  "Take a deep breath. Is this scroll adding value to your life?",
-  "Remember why you opened your browser. Was it for this?"
-];
+async function loadConfig() {
+  const stored = await chrome.storage.local.get('dsbCustomConfig');
+  Object.assign(CONFIG, DEFAULT_CONFIG, stored.dsbCustomConfig || {});
+}
 
-const SNOOZE_DURATION         = 300000; // 5 minutes in ms
-const STRONG_WARNING_FOLLOWUP = 300;    // seconds after strong warning before "final reminder"
-const CONTINUE_REARM_DELAY    = 180;    // seconds after "Continue Scrolling" before re-arming
-const BREAK_DURATION          = 600000; // 10 minutes in ms
-const BREAK_MIN_DURATION      = 120000; // 2 minutes — minimum break before "I'm back" is enabled
-const VIDEO_SCROLL_THRESHOLD  = 0.2;    // fraction of viewport — player is "past" if bottom < 20%
-const MIN_CODE_BLOCKS_PRODUCTIVE = 3;   // minimum code blocks to classify page as productive
+// Load config before proceeding using IIFE to avoid top-level await
+(async () => {
+  await loadConfig();
+})();
 
 /* ─── In-memory session state (keyed by tabId) ───────────────────────────── */
 // Persisted to chrome.storage.local on every update; restored on service-worker restart.
@@ -99,7 +145,7 @@ let breakBlocks = {}; // { [hostname]: expiryMs }
  *  +5   idleTime < 10s
  *  -50  longVideoDetected
  *
- * finalScore = rawScore * CONTEXT_MULTIPLIERS[pageContext]
+ * finalScore = rawScore * contextMultipliers[pageContext]
  *
  * ─────────────────────────────────────────────────────────────────────────── */
 function calculateScore(data) {
@@ -127,14 +173,14 @@ function calculateScore(data) {
 
   // Apply context multiplier
   const context    = data.pageContext || 'unknown';
-  const multiplier = CONTEXT_MULTIPLIERS[context] ?? CONTEXT_MULTIPLIERS['unknown'];
+  const multiplier = CONFIG.contextMultipliers[context] ?? CONFIG.contextMultipliers['unknown'];
   return Math.round(score * multiplier);
 }
 
 /* ─── Pick a random motivational message ─────────────────────────────────── */
 function randomMessage() {
-  return MOTIVATIONAL_MESSAGES[
-    Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length)
+  return CONFIG.motivationalMessages[
+    Math.floor(Math.random() * CONFIG.motivationalMessages.length)
   ];
 }
 
@@ -145,6 +191,34 @@ async function persistSessions() {
   } catch (err) {
     console.error('[DSB] Failed to persist sessions:', err);
   }
+}
+
+/* ─── Date helper functions for time-based statistics ───────────────────── */
+/**
+ * Returns date string in YYYY-MM-DD format from timestamp
+ */
+function getDateKey(timestamp) {
+  const date = new Date(timestamp);
+  return date.toISOString().split('T')[0];
+}
+
+/**
+ * Returns week string in YYYY-WW format from timestamp
+ * Using ISO week date format
+ */
+function getWeekKey(timestamp) {
+  const date = new Date(timestamp);
+  return date.toISOString().split('T')[0]; // Simplified - using date for now
+  // For proper week numbering, we'd need more complex logic
+  // For MVP, we'll use month-based grouping and enhance later
+}
+
+/**
+ * Returns month string in YYYY-MM format from timestamp
+ */
+function getMonthKey(timestamp) {
+  const date = new Date(timestamp);
+  return date.toISOString().substring(0, 7); // YYYY-MM
 }
 
 /* ─── Restore sessions from chrome.storage.local on startup ─────────────── */
@@ -173,12 +247,18 @@ async function updateAggregateStats(data, session, warningTriggered, hostname) {
   try {
     const result = await chrome.storage.local.get('dsbStats');
     const stats = result.dsbStats || {
+      // Lifetime totals (existing)
       totalScrollCount: 0,
       totalKeyPresses: 0,
       totalSessionTime: 0,
       totalWarningsTriggered: 0,
       doomScrollSessions: 0,
-      siteBreakdown: {} // { [hostname]: { scrollCount, sessionTime, warningCount } }
+      siteBreakdown: {}, // { [hostname]: { scrollCount, sessionTime, warningCount } }
+
+      // Time-based tracking (new)
+      dailyStats: {},    // { "YYYY-MM-DD": { scrollCount, sessionTime, warnings, etc. } }
+      weeklyStats: {},   // { "YYYY-WW": { ... } }
+      monthlyStats: {}   // { "YYYY-MM": { ... } }
     };
 
     // Compute incremental deltas since the last activity report for this tab
@@ -216,6 +296,67 @@ async function updateAggregateStats(data, session, warningTriggered, hostname) {
       }
     }
 
+    // Get current timestamp for time-based aggregation
+    const now = Date.now();
+    const dateKey = getDateKey(now);
+    const weekKey = getWeekKey(now);
+    const monthKey = getMonthKey(now);
+
+    // Update time-based statistics
+    // Daily stats
+    if (!stats.dailyStats[dateKey]) {
+      stats.dailyStats[dateKey] = {
+        scrollCount: 0,
+        keyPressCount: 0,
+        sessionTime: 0,
+        warningsTriggered: 0,
+        doomSessions: 0
+      };
+    }
+    stats.dailyStats[dateKey].scrollCount += scrollDelta;
+    stats.dailyStats[dateKey].keyPressCount += keyDelta;
+    stats.dailyStats[dateKey].sessionTime += timeDelta;
+    if (warningTriggered) {
+      stats.dailyStats[dateKey].warningsTriggered += 1;
+      stats.dailyStats[dateKey].doomSessions += 1;
+    }
+
+    // Weekly stats
+    if (!stats.weeklyStats[weekKey]) {
+      stats.weeklyStats[weekKey] = {
+        scrollCount: 0,
+        keyPressCount: 0,
+        sessionTime: 0,
+        warningsTriggered: 0,
+        doomSessions: 0
+      };
+    }
+    stats.weeklyStats[weekKey].scrollCount += scrollDelta;
+    stats.weeklyStats[weekKey].keyPressCount += keyDelta;
+    stats.weeklyStats[weekKey].sessionTime += timeDelta;
+    if (warningTriggered) {
+      stats.weeklyStats[weekKey].warningsTriggered += 1;
+      stats.weeklyStats[weekKey].doomSessions += 1;
+    }
+
+    // Monthly stats
+    if (!stats.monthlyStats[monthKey]) {
+      stats.monthlyStats[monthKey] = {
+        scrollCount: 0,
+        keyPressCount: 0,
+        sessionTime: 0,
+        warningsTriggered: 0,
+        doomSessions: 0
+      };
+    }
+    stats.monthlyStats[monthKey].scrollCount += scrollDelta;
+    stats.monthlyStats[monthKey].keyPressCount += keyDelta;
+    stats.monthlyStats[monthKey].sessionTime += timeDelta;
+    if (warningTriggered) {
+      stats.monthlyStats[monthKey].warningsTriggered += 1;
+      stats.monthlyStats[monthKey].doomSessions += 1;
+    }
+
     await chrome.storage.local.set({ dsbStats: stats });
   } catch (err) {
     console.error('[DSB] Failed to update aggregate stats:', err);
@@ -224,11 +365,15 @@ async function updateAggregateStats(data, session, warningTriggered, hostname) {
 
 /* ─── Send a warning message to the content script of a tab ─────────────── */
 async function sendWarning(tabId, level, message) {
+  // Check if we should show a motivational message based on frequency
+  const showMessage = Math.random() < CONFIG.motivationalMessageFrequency;
+  const finalMessage = showMessage ? message : '';
+
   try {
     await chrome.tabs.sendMessage(tabId, {
       type: 'SHOW_WARNING',
       level,
-      message
+      message: finalMessage
     });
   } catch (err) {
     // Tab may have been closed or navigated away — log and ignore.
@@ -263,7 +408,8 @@ async function handleActivityReport(tabId, data) {
           type: 'SHOW_BREAK_REDIRECT',
           remainingMs: blockExpiry - now
         });
-      } catch (_) {}
+      } catch (_) {
+      }
       return;
     } else if (blockExpiry) {
       // Block has expired
@@ -276,8 +422,8 @@ async function handleActivityReport(tabId, data) {
     if (sensitivity === 'low')  thresholdMultiplier = 1.5;
     if (sensitivity === 'high') thresholdMultiplier = 0.7;
 
-    const warnThreshold   = SCORE_THRESHOLDS.WARNING        * thresholdMultiplier;
-    const strongThreshold = SCORE_THRESHOLDS.STRONG_WARNING * thresholdMultiplier;
+    const warnThreshold   = CONFIG.scoreThresholds.WARNING        * thresholdMultiplier;
+    const strongThreshold = CONFIG.scoreThresholds.STRONG_WARNING * thresholdMultiplier;
 
     const score = calculateScore(data);
 
@@ -330,7 +476,7 @@ async function handleActivityReport(tabId, data) {
     // After clicking "Continue", suppress new warnings for CONTINUE_REARM_DELAY seconds.
     if (session.continueClickedAt > 0) {
       const elapsed = (Date.now() - session.continueClickedAt) / 1000;
-      if (elapsed < CONTINUE_REARM_DELAY) {
+      if (elapsed < CONFIG.continueRearmDelay) {
         await persistSessions();
         return;
       } else {
@@ -355,7 +501,7 @@ async function handleActivityReport(tabId, data) {
       session.strongWarningTime > 0
     ) {
       const elapsed = (Date.now() - session.strongWarningTime) / 1000;
-      if (elapsed >= STRONG_WARNING_FOLLOWUP) {
+      if (elapsed >= CONFIG.STRONG_WARNING_FOLLOWUP) {
         session.finalReminderSent = true;
         warningTriggered = true;
         await sendWarning(tabId, 'strong', '🚨 Final reminder: ' + randomMessage());
@@ -387,7 +533,6 @@ async function handleActivityReport(tabId, data) {
     await persistSessions();
 
     await chrome.storage.local.set({ [`dsbTabSession_${tabId}`]: session });
-
   } catch (err) {
     console.error('[DSB] Error in handleActivityReport:', err);
   }
@@ -397,7 +542,7 @@ async function handleActivityReport(tabId, data) {
 async function handleSnooze(tabId) {
   if (!sessions[tabId]) return;
   sessions[tabId].snoozed     = true;
-  sessions[tabId].snoozeUntil = Date.now() + SNOOZE_DURATION;
+  sessions[tabId].snoozeUntil = Date.now() + CONFIG.snoozeDuration;
   // Reset warning level so warnings can reappear after snooze expires
   sessions[tabId].lastWarningLevel = 'none';
   await persistSessions();
@@ -437,7 +582,7 @@ async function cleanupStaleSessions() {
 restoreSessions();
 
 // Listen for messages from content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   if (!tabId) return false;
 
@@ -482,7 +627,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TAKE_BREAK') {
     // Block the hostname for the break duration
     const hostname = message.hostname;
-    const duration = message.duration || BREAK_DURATION;
+    const duration = message.duration || CONFIG.breakDuration;
     if (hostname) {
       breakBlocks[hostname] = Date.now() + duration;
     }
@@ -519,6 +664,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_SESSION') {
     const session = sessions[message.tabId] || null;
     sendResponse({ session });
+    return false;
+  }
+
+  // Reload configuration when settings are updated
+  if (message.type === 'CONFIG_UPDATED') {
+    await loadConfig();
+    sendResponse({ ok: true });
     return false;
   }
 

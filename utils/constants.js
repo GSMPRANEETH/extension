@@ -82,3 +82,4 @@ const CONTINUE_REARM_DELAY       = 180;    // seconds after "Continue Scrolling"
 const SECTION_CHECK_INTERVAL     = 1000;   // 1 second — how often to poll for URL/section changes
 const VIDEO_SCROLL_THRESHOLD     = 0.2;    // fraction of viewport height — player is "past" if bottom < 20%
 const MIN_CODE_BLOCKS_PRODUCTIVE = 3;      // minimum <pre code> blocks to classify page as productive
+const STRONG_WARNING_FOLLOWUP    = 300;    // 5 minutes — time after strong warning before final reminder

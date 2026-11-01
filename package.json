@@ -1,0 +1,25 @@
+{
+  "name": "doom-scroll-blocker",
+  "version": "1.0.0",
+  "description": "A Chrome Extension to block doom-scrolling behavior",
+  "main": "background/background.js",
+  "scripts": {
+    "build": "node build/build.js",
+    "watch": "chokidar 'utils/constants.js' -c 'npm run build'",
+    "lint": "eslint .",
+    "test": "jest"
+  },
+  "keywords": [
+    "chrome-extension",
+    "productivity",
+    "doomscrolling",
+    "web-extension"
+  ],
+  "author": "GSMPRANEETH",
+  "license": "MIT",
+  "devDependencies": {
+    "chokidar": "^3.5.3",
+    "eslint": "^8.57.0",
+    "jest": "^29.0.0"
+  }
+}
