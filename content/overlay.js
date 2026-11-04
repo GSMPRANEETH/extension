@@ -317,7 +317,7 @@ function showBreakScreen(remainingMs) {
   shadowHost.style.height = '100vh';
 
   const breakStartMs = Date.now();
-  const minDurationMs = BREAK_MIN_DURATION;
+  const minDurationMs = Math.min(BREAK_MIN_DURATION, remainingMs);
 
   const backdrop = document.createElement('div');
   backdrop.className = 'dsb-backdrop dsb-break';
@@ -538,16 +538,19 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
   const breakBtn = document.createElement('button');
   breakBtn.className = 'dsb-btn dsb-btn-primary';
   breakBtn.textContent = '🌿 Take a Break';
-  breakBtn.addEventListener('click', () => {
+  breakBtn.addEventListener('click', async () => {
+    let duration = BREAK_DURATION;
     try {
-      chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         type: 'TAKE_BREAK',
-        hostname: window.location.hostname,
-        duration: BREAK_DURATION
+        hostname: window.location.hostname
       });
+      if (response?.ok && Number.isFinite(response.duration) && response.duration > 0) {
+        duration = response.duration;
+      }
     } catch (_) {}
     removeOverlay();
-    showBreakScreen(BREAK_DURATION);
+    showBreakScreen(duration);
   });
   actions.appendChild(breakBtn);
 

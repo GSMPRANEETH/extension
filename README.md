@@ -17,6 +17,7 @@ A Chrome Extension that helps you break the doom-scrolling habit on YouTube Shor
 - **Configurable Sensitivity** — Low / Medium / High sensitivity slider adjusts all score thresholds.
 - **Whitelist** — add any domain to never trigger warnings on that site.
 - **Motivational Messages** — a pool of 10 messages randomly shown in overlays (can be toggled off).
+- **Data Export/Import** — export or import your settings, whitelist, and preferences as a JSON file.
 - **Shadow DOM Isolation** — overlay UI is rendered inside a Shadow DOM to avoid any conflicts with host-page styles.
 
 ---
@@ -96,6 +97,7 @@ Open the extension popup and expand **⚙️ Settings**:
 | Detection Sensitivity | Low / Medium / High — scales all score thresholds |
 | Motivational Messages | Toggle the motivational quote in overlays on/off |
 | Whitelist | Add domains that should never trigger warnings |
+| Data Export/Import | Export settings as JSON file or import from a previously exported file |
 
 Click **Reset Statistics** in the footer to clear all accumulated data.
 
@@ -132,3 +134,6 @@ Please keep PRs focused and include a clear description of the change.
 ## 📄 License
 
 MIT © GSMPRANEETH
+### Analytics limits
+
+Daily, ISO-week and monthly charts use recorded UTC activity. The trend compares the last two recorded buckets, which may be partial periods. Focus-session and time-saved cards show an unavailable marker because session outcomes and a measured baseline are not collected. Settings imports are validated before a single storage write; resetting settings preserves activity history.

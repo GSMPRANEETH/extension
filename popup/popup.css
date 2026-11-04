@@ -463,3 +463,54 @@ body {
   color: var(--dsb-warn);
   border-color: rgba(244, 67, 54, 0.2);
 }
+
+/* ─── Insights panel ─────────────────────────────────────────────────────── */
+.dsb-period-selector {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dsb-charts-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dsb-insights-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dsb-insight-item {
+  background: var(--dsb-surface2);
+  border-radius: var(--dsb-radius-sm);
+  padding: 12px;
+  text-align: center;
+}
+
+.dsb-insight-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsb-text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dsb-insight-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--dsb-accent);
+  margin-bottom: 2px;
+}
+
+.dsb-insight-label {
+  font-size: 10px;
+  color: var(--dsb-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
