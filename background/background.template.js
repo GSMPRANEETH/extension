@@ -83,14 +83,20 @@ const DEFAULT_CONFIG = {
   videoScrollThreshold:      0.2,    // fraction of viewport height — player is "past" if bottom < 20%
   minCodeBlocksProductive:   3,      // minimum <pre code> blocks to classify page as productive
   /* ─── Customizable settings (exposed in UI) ──────────────────────── */
-  motivationalMessageFrequency: 1.0, // Probability of showing a motivational message (0-1)
+  motivationalMessageFrequency: 1.0, // Probability of showing a motivational message (0-1),
+  STRONG_WARNING_FOLLOWUP: 300    // 5 minutes — time after strong warning before final reminder
 };
 
-let CONFIG = {};
+let CONFIG = structuredClone(DEFAULT_CONFIG);
 
 async function loadConfig() {
   const stored = await chrome.storage.local.get('dsbCustomConfig');
-  Object.assign(CONFIG, DEFAULT_CONFIG, stored.dsbCustomConfig || {});
+  const custom = stored.dsbCustomConfig || {};
+  CONFIG = {
+    ...DEFAULT_CONFIG, ...custom,
+    contextMultipliers: { ...DEFAULT_CONFIG.contextMultipliers, ...custom.contextMultipliers },
+    scoreThresholds: { ...DEFAULT_CONFIG.scoreThresholds, ...custom.scoreThresholds }
+  };
 }
 
 // Load config before proceeding using IIFE to avoid top-level await
@@ -207,9 +213,11 @@ function getDateKey(timestamp) {
  */
 function getWeekKey(timestamp) {
   const date = new Date(timestamp);
-  return date.toISOString().split('T')[0]; // Simplified - using date for now
-  // For proper week numbering, we'd need more complex logic
-  // For MVP, we'll use month-based grouping and enhance later
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
 /**
@@ -252,13 +260,18 @@ async function updateAggregateStats(data, session, warningTriggered, hostname) {
       totalSessionTime: 0,
       totalWarningsTriggered: 0,
       doomScrollSessions: 0,
-      siteBreakdown: {} // { [hostname]: { scrollCount, sessionTime, warningCount } }
+      siteBreakdown: {}, // { [hostname]: { scrollCount, sessionTime, warningCount } }
 
       // Time-based tracking (new)
       dailyStats: {},    // { "YYYY-MM-DD": { scrollCount, sessionTime, warnings, etc. } }
       weeklyStats: {},   // { "YYYY-WW": { ... } }
       monthlyStats: {}   // { "YYYY-MM": { ... } }
     };
+
+    // Existing installations have lifetime totals but no period buckets.
+    stats.dailyStats ??= {};
+    stats.weeklyStats ??= {};
+    stats.monthlyStats ??= {};
 
     // Compute incremental deltas since the last activity report for this tab
     const scrollDelta  = Math.max(0, (data.scrollCount    || 0) - (session.lastScrollCount   || 0));
@@ -581,9 +594,17 @@ async function cleanupStaleSessions() {
 restoreSessions();
 
 // Listen for messages from content scripts
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'GET_SESSION') {
+    sendResponse({ session: sessions[message.tabId] || null });
+    return false;
+  }
+  if (message.type === 'CONFIG_UPDATED') {
+    loadConfig().then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
+  }
   const tabId = sender.tab?.id;
-  if (!tabId) return false;
+  if (tabId === undefined) return false;
 
   if (message.type === 'ACTIVITY_REPORT') {
     handleActivityReport(tabId, message.data).then(() => {
@@ -655,20 +676,6 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       session.lastWarningLevel  = 'none'; // allow next threshold to re-trigger
       persistSessions();
     }
-    sendResponse({ ok: true });
-    return false;
-  }
-
-  // Popup requesting the current session for the active tab
-  if (message.type === 'GET_SESSION') {
-    const session = sessions[message.tabId] || null;
-    sendResponse({ session });
-    return false;
-  }
-
-  // Reload configuration when settings are updated
-  if (message.type === 'CONFIG_UPDATED') {
-    await loadConfig();
     sendResponse({ ok: true });
     return false;
   }

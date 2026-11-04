@@ -220,18 +220,24 @@ async function loadCustomSettings() {
 }
 
 /* ─── Save custom settings ──────────────────────────────────────────────── */
-async function saveCustomSettings(patch) {
-  try {
+let customSettingsUpdate = Promise.resolve();
+function saveCustomSettings(patch) {
+  customSettingsUpdate = customSettingsUpdate.then(async () => {
     const result = await chrome.storage.local.get(CUSTOM_CONFIG_KEY);
     const config = result.dsbCustomConfig || {};
-    const updated = Object.assign({}, config, patch);
+    const updated = {
+      ...config, ...patch,
+      contextMultipliers: { ...config.contextMultipliers, ...patch.contextMultipliers },
+      scoreThresholds: { ...config.scoreThresholds, ...patch.scoreThresholds }
+    };
     await chrome.storage.local.set({ dsbCustomConfig: updated });
 
     // Also update the background page so it uses the new settings immediately
     chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
-  } catch (err) {
+  }).catch((err) => {
     console.error('[DSB Popup] saveCustomSettings error:', err);
-  }
+  });
+  return customSettingsUpdate;
 }
 
 /* ─── Populate advanced settings UI ─────────────────────────────────────── */
@@ -270,7 +276,6 @@ async function populateAdvancedUI(customConfig) {
         valueSpan.textContent = slider.value;
         saveCustomSettings({
           contextMultipliers: {
-            ...(customConfig.contextMultipliers || {}),
             [ctx.id]: parseFloat(slider.value)
           }
         });
@@ -307,7 +312,6 @@ async function populateAdvancedUI(customConfig) {
         valueSpan.textContent = slider.value;
         saveCustomSettings({
           scoreThresholds: {
-            ...(customConfig.scoreThresholds || {}),
             [th.id]: parseInt(slider.value)
           }
         });
@@ -322,11 +326,11 @@ async function populateAdvancedUI(customConfig) {
     motivFrequencySlider.value = frequency;
     $('dsb-motiv-frequency-value').textContent = `${(frequency * 100).toFixed(0)}%`;
 
-    motivFrequencySlider.addEventListener('input', () => {
+    motivFrequencySlider.oninput = () => {
       const value = motivFrequencySlider.value;
       $('dsb-motiv-frequency-value').textContent = `${(value * 100).toFixed(0)}%`;
       saveCustomSettings({ motivationalMessageFrequency: parseFloat(value) });
-    });
+    };
   }
 
   // Set break duration
@@ -337,11 +341,11 @@ async function populateAdvancedUI(customConfig) {
     breakDurationSlider.value = durationInMinutes;
     $('dsb-break-duration-value').textContent = durationInMinutes;
 
-    breakDurationSlider.addEventListener('input', () => {
+    breakDurationSlider.oninput = () => {
       const value = breakDurationSlider.value;
       $('dsb-break-duration-value').textContent = value;
       saveCustomSettings({ breakDuration: parseInt(value) * 60000 }); // Convert minutes to milliseconds
-    });
+    };
   }
 }
 
@@ -385,6 +389,35 @@ async function exportSettings() {
   }
 }
 
+function validateImportedSettings(data) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const numeric = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+  if (!object(data) || data.version !== '1.0' || !object(data.settings)) throw new Error('Invalid settings file');
+  const settings = data.settings;
+  const allowed = ['dsbSettings', CUSTOM_CONFIG_KEY, ONBOARDING_KEY];
+  if (Object.keys(settings).some(key => !allowed.includes(key))) throw new Error('Unknown settings key');
+  if ('dsbSettings' in settings) {
+    const cfg = settings.dsbSettings;
+    if (!object(cfg) || Object.keys(cfg).some(key => !['enabled', 'motivationalMessages', 'sensitivity', 'whitelist'].includes(key))) throw new Error('Invalid main settings');
+    for (const key of ['enabled', 'motivationalMessages']) {
+      if (key in cfg && typeof cfg[key] !== 'boolean') throw new Error('Invalid toggle');
+    }
+    if ('sensitivity' in cfg && !['low', 'medium', 'high'].includes(cfg.sensitivity)) throw new Error('Invalid sensitivity');
+    if ('whitelist' in cfg && (!Array.isArray(cfg.whitelist) || cfg.whitelist.some(domain => typeof domain !== 'string' || domain.length > 253 || !/^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/i.test(domain)))) throw new Error('Invalid whitelist');
+  }
+  if (CUSTOM_CONFIG_KEY in settings) {
+    const cfg = settings[CUSTOM_CONFIG_KEY];
+    if (!object(cfg) || Object.keys(cfg).some(key => !Object.hasOwn(UI_DEFAULTS, key))) throw new Error('Invalid custom settings');
+    for (const [key, max] of [['contextMultipliers', 3], ['scoreThresholds', 100]]) {
+      if (key in cfg && (!object(cfg[key]) || Object.entries(cfg[key]).some(([name, value]) => !Object.hasOwn(UI_DEFAULTS[key], name) || !numeric(value, 0, max)))) throw new Error('Invalid scoring settings');
+    }
+    if ('motivationalMessageFrequency' in cfg && !numeric(cfg.motivationalMessageFrequency, 0, 1)) throw new Error('Invalid message frequency');
+    if ('breakDuration' in cfg && !numeric(cfg.breakDuration, 60000, 1800000)) throw new Error('Invalid break duration');
+  }
+  if (ONBOARDING_KEY in settings && typeof settings[ONBOARDING_KEY] !== 'boolean') throw new Error('Invalid onboarding status');
+  return settings;
+}
+
 async function importSettings() {
   try {
     const fileInput = $('dsb-import-input');
@@ -397,29 +430,9 @@ async function importSettings() {
     const text = await file.text();
     const importData = JSON.parse(text);
 
-    // Validate import data structure
-    if (!importData.settings) {
-      showImportStatus('Invalid settings file format', 'error');
-      return;
-    }
-
-    // Apply settings
-    const settings = importData.settings;
-
-    // Apply main settings if they exist
-    if (settings.dsbSettings) {
-      await chrome.storage.local.set({ dsbSettings: settings.dsbSettings });
-    }
-
-    // Apply custom config if it exists
-    if (settings.dsbCustomConfig) {
-      await chrome.storage.local.set({ dsbCustomConfig: settings.dsbCustomConfig });
-    }
-
-    // Apply onboarding status if it exists
-    if (settings.dsbHasSeenOnboarding !== undefined) {
-      await chrome.storage.local.set({ dsbHasSeenOnboarding: settings.dsbHasSeenOnboarding });
-    }
+    const settings = validateImportedSettings(importData);
+    await customSettingsUpdate;
+    await chrome.storage.local.set(settings);
 
     // Notify background page to reload settings
     chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
@@ -444,8 +457,8 @@ async function resetAllSettings() {
   }
 
   try {
-    // Clear all extension storage
-    await chrome.storage.local.clear();
+    await customSettingsUpdate;
+    await chrome.storage.local.remove(['dsbSettings', CUSTOM_CONFIG_KEY, ONBOARDING_KEY]);
 
     // Reset UI to defaults
     loadSettings();
@@ -825,7 +838,7 @@ async function updateInsightsDisplay(stats) {
   const timeSaved = calculateTimeSaved(stats);
   const timeSavedEl = $('dsb-time-saved');
   if (timeSavedEl) {
-    timeSavedEl.textContent = formatMinutes(timeSaved);
+    timeSavedEl.textContent = timeSaved === null ? '—' : formatMinutes(timeSaved);
   }
 
   // Update improvement trend
@@ -841,12 +854,8 @@ async function updateInsightsDisplay(stats) {
  * This is a simplified implementation - in reality we'd need to track session outcomes
  */
 function calculateFocusSessions(stats) {
-  // For now, we'll estimate based on doom sessions vs total sessions
-  // In a real implementation, we'd track individual session outcomes
-  const doomSessions = stats.doomScrollSessions || 0;
-  // Placeholder: assume 70% of sessions are focus sessions (no warnings)
-  // This would need to be implemented properly with session tracking
-  return Math.max(0, Math.floor((stats.totalSessionTime || 0) / 300) - doomSessions); // Rough estimate
+  // Session outcomes are not recorded, so do not invent a focus-session count.
+  return '—';
 }
 
 /**
@@ -854,20 +863,24 @@ function calculateFocusSessions(stats) {
  * This would need user-defined goals or historical averages
  */
 function calculateTimeSaved(stats) {
-  // Placeholder implementation
-  // In reality, this would compare against user goals or historical averages
-  const dailyLimit = 1800; // 30 minutes in seconds - could be user configurable
-  const dailyUsage = stats.dailyStats?.[getDateKey(Date.now())]?.sessionTime || 0;
-  return Math.max(0, dailyLimit - dailyUsage);
+  // Time saved requires a measured baseline that this version does not collect.
+  return null;
 }
 
 /**
  * Calculates improvement trend compared to previous period
  */
 function calculateImprovementTrend(stats) {
-  // Placeholder implementation
-  // Would compare current period to previous period
-  return "—"; // Placeholder
+  const periods = stats[`${activePeriod}Stats`] || {};
+  const keys = Object.keys(periods).sort();
+  if (keys.length < 2) return '—';
+  const previous = periods[keys[keys.length - 2]].sessionTime || 0;
+  const current = periods[keys[keys.length - 1]].sessionTime || 0;
+  if (!previous) return '—';
+  // shortcut: raw recorded periods can be partial, normalize complete periods before claiming a rate trend.
+  const change = Math.round((previous - current) / previous * 100);
+  return `${Math.abs(change)}% ${change >= 0 ? 'less' : 'more'} time`;
+
 }
 
 /**
@@ -900,8 +913,8 @@ function renderTrendsChart(stats, canvas) {
   const ctx = canvas.getContext('2d');
 
   // Get daily stats for the last 7 days
-  const dailyStats = stats.dailyStats || {};
-  const dates = Object.keys(dailyStats).sort().slice(-7); // Last 7 days
+  const dailyStats = stats[`${activePeriod}Stats`] || {};
+  const dates = Object.keys(dailyStats).sort().slice(-7);
 
   const data = dates.map(date => {
     const dayStats = dailyStats[date] || {};

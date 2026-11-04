@@ -4,7 +4,7 @@
   "description": "A Chrome Extension to block doom-scrolling behavior",
   "main": "background/background.js",
   "scripts": {
-    "build": "node build/build.js",
+    "build": "node -e \"require('fs').copyFileSync('background/background.template.js', 'background/background.js')\"",
     "watch": "chokidar 'utils/constants.js' -c 'npm run build'",
     "lint": "eslint .",
     "test": "jest"

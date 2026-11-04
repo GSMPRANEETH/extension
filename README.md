@@ -134,3 +134,6 @@ Please keep PRs focused and include a clear description of the change.
 ## 📄 License
 
 MIT © GSMPRANEETH
+### Analytics limits
+
+Daily, ISO-week and monthly charts use recorded UTC activity. The trend compares the last two recorded buckets, which may be partial periods. Focus-session and time-saved cards show an unavailable marker because session outcomes and a measured baseline are not collected. Settings imports are validated before a single storage write; resetting settings preserves activity history.
