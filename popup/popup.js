@@ -220,9 +220,9 @@ async function loadCustomSettings() {
 }
 
 /* ─── Save custom settings ──────────────────────────────────────────────── */
-let customSettingsUpdate = Promise.resolve();
+let settingsUpdate = Promise.resolve();
 function saveCustomSettings(patch) {
-  customSettingsUpdate = customSettingsUpdate.then(async () => {
+  settingsUpdate = settingsUpdate.catch(() => {}).then(async () => {
     const result = await chrome.storage.local.get(CUSTOM_CONFIG_KEY);
     const config = result.dsbCustomConfig || {};
     const updated = {
@@ -237,7 +237,7 @@ function saveCustomSettings(patch) {
   }).catch((err) => {
     console.error('[DSB Popup] saveCustomSettings error:', err);
   });
-  return customSettingsUpdate;
+  return settingsUpdate;
 }
 
 /* ─── Populate advanced settings UI ─────────────────────────────────────── */
@@ -263,7 +263,7 @@ async function populateAdvancedUI(customConfig) {
       const container = document.createElement('div');
       container.className = 'dsb-field-row';
       container.innerHTML = `
-        <label class="dsb-field-label">${ctx.label} Multiplier</label>
+        <label class="dsb-field-label" for="dsb-context-${ctx.id}">${ctx.label} Multiplier</label>
         <input type="range" id="dsb-context-${ctx.id}" min="0" max="3" step="0.1" value="${value}" class="dsb-slider" />
         <span id="dsb-context-${ctx.id}-value">${value.toFixed(1)}</span>
       `;
@@ -299,7 +299,7 @@ async function populateAdvancedUI(customConfig) {
       const container = document.createElement('div');
       container.className = 'dsb-field-row';
       container.innerHTML = `
-        <label class="dsb-field-label">${th.label}</label>
+        <label class="dsb-field-label" for="dsb-threshold-${th.id}">${th.label}</label>
         <input type="range" id="dsb-threshold-${th.id}" min="0" max="100" step="1" value="${value}" class="dsb-slider" />
         <span id="dsb-threshold-${th.id}-value">${value}</span>
       `;
@@ -431,8 +431,8 @@ async function importSettings() {
     const importData = JSON.parse(text);
 
     const settings = validateImportedSettings(importData);
-    await customSettingsUpdate;
-    await chrome.storage.local.set(settings);
+    settingsUpdate = settingsUpdate.catch(() => {}).then(() => chrome.storage.local.set(settings));
+    await settingsUpdate;
 
     // Notify background page to reload settings
     chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
@@ -457,8 +457,8 @@ async function resetAllSettings() {
   }
 
   try {
-    await customSettingsUpdate;
-    await chrome.storage.local.remove(['dsbSettings', CUSTOM_CONFIG_KEY, ONBOARDING_KEY]);
+    settingsUpdate = settingsUpdate.catch(() => {}).then(() => chrome.storage.local.remove(['dsbSettings', CUSTOM_CONFIG_KEY, ONBOARDING_KEY]));
+    await settingsUpdate;
 
     // Reset UI to defaults
     loadSettings();
@@ -488,15 +488,15 @@ function showImportStatus(message, type = 'info') {
 }
 
 /* ─── Save settings helper ───────────────────────────────────────────────── */
-async function saveSettings(patch) {
-  try {
+function saveSettings(patch) {
+  settingsUpdate = settingsUpdate.catch(() => {}).then(async () => {
     const result = await chrome.storage.local.get('dsbSettings');
-    const cfg    = result.dsbSettings || {};
-    const updated = Object.assign({}, cfg, patch);
+    const updated = { ...result.dsbSettings, ...patch };
     await chrome.storage.local.set({ dsbSettings: updated });
-  } catch (err) {
+  }).catch((err) => {
     console.error('[DSB Popup] saveSettings error:', err);
-  }
+  });
+  return settingsUpdate;
 }
 
 /* ─── Enable/disable UI state ────────────────────────────────────────────── */
@@ -542,7 +542,10 @@ function showOnboarding() {
   const statsPanel = $('dsb-stats-panel');
   const settingsPanel = $('dsb-settings-panel');
   const footer = $('dsb-footer');
+  const insights = $('dsb-insights-panel');
   if (onboarding) onboarding.style.display = 'block';
+  if (insights) insights.style.display = 'none';
+  $('dsb-toggle-btn').disabled = true;
   if (sessionPanel) sessionPanel.style.display = 'none';
   if (statsPanel) statsPanel.style.display = 'none';
   if (settingsPanel) settingsPanel.style.display = 'none';
@@ -555,7 +558,10 @@ function hideOnboarding() {
   const statsPanel = $('dsb-stats-panel');
   const settingsPanel = $('dsb-settings-panel');
   const footer = $('dsb-footer');
+  const insights = $('dsb-insights-panel');
   if (onboarding) onboarding.style.display = 'none';
+  if (insights) insights.style.display = '';
+  $('dsb-toggle-btn').disabled = false;
   if (sessionPanel) sessionPanel.style.display = 'block';
   if (statsPanel) statsPanel.style.display = 'block';
   if (settingsPanel) settingsPanel.style.display = 'block';
@@ -598,6 +604,7 @@ function initOnboarding() {
         loadSession();
         loadStats();
         loadSettings();
+        loadAndDisplayInsights();
         bindEvents();
         startRefreshInterval();
       });
@@ -775,6 +782,7 @@ function startRefreshInterval() {
   refreshIntervalId = setInterval(() => {
     loadSession();
     loadStats();
+    loadAndDisplayInsights();
   }, POPUP_REFRESH_INTERVAL);
 }
 
@@ -918,7 +926,7 @@ function renderTrendsChart(stats, canvas) {
 
   const data = dates.map(date => {
     const dayStats = dailyStats[date] || {};
-    return dayStats.sessionTime || 0; // Session time in seconds
+    return (dayStats.sessionTime || 0) / 60; // Minutes, matching the axis label
   });
 
   // Clear canvas
@@ -962,14 +970,16 @@ function renderTrendsChart(stats, canvas) {
       ctx.lineTo(x, y);
     }
 
-    // Draw point
+  });
+  ctx.stroke();
+  data.forEach((value, index) => {
+    const x = padding + (index * (chartWidth / Math.max(data.length - 1, 1)));
+    const y = chartHeight + padding - (value / maxValue) * chartHeight;
     ctx.fillStyle = '#ff6b6b';
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fill();
   });
-
-  ctx.stroke();
 
   // Draw labels (simplified)
   ctx.fillStyle = '#333';
@@ -1125,7 +1135,11 @@ async function exportStatistics() {
     }
 
     // Create blob and trigger download
-    const csvContent = csvRows.map(row => row.join(',')).join('\n');
+    const csvContent = csvRows.map(row => row.map(value => {
+      let field = String(value);
+      if (typeof value === 'string' && /^[=+\-@\t\r]/.test(field)) field = "'" + field;
+      return '"' + field.replaceAll('"', '""') + '"';
+    }).join(',')).join('\n');
     const blob = new Blob([csvContent], {type: 'text/csv'});
     const url = URL.createObjectURL(blob);
 

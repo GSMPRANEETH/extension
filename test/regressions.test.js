@@ -91,3 +91,43 @@ test('weekly selector reads weekly buckets and unsupported estimates are not fab
   expect(run('calculateTimeSaved({})')).toBeNull();
   expect(run('calculateFocusSessions({totalSessionTime:100000})')).toBe('—');
 });
+
+
+test('trend line keeps its segments and converts seconds to minutes', () => {
+  const paths = []; let current = [];
+  const ctx = { clearRect() {}, fillText() {}, save() {}, restore() {}, translate() {}, rotate() {}, fill() {},
+    beginPath() { current = []; }, moveTo(x,y) { current.push(['move',x,y]); },
+    lineTo(x,y) { current.push(['line',x,y]); }, arc() { current.push(['arc']); },
+    stroke() { paths.push([...current]); } };
+  const {run,context}=load('popup/popup.js');context.canvas={width:300,height:200,getContext:()=>ctx};
+  run('renderTrendsChart({dailyStats:{"2026-11-03":{sessionTime:60},"2026-11-04":{sessionTime:120}}},canvas)');
+  expect(paths[1]).toEqual([['move',40,100],['line',260,40]]);
+});
+
+test('CSV exports quote site names and neutralize spreadsheet formulas', async () => {
+  const store={dsbStats:{siteBreakdown:{'=1+1,example':{scrollCount:3,sessionTime:60,warningCount:1}}}};
+  const {run,context}=load('popup/popup.js',store,{'dsb-import-status':{}});
+  let csv;
+  context.Blob=class {constructor(parts){csv=parts[0];}};
+  context.URL={createObjectURL:()=> 'blob:test',revokeObjectURL(){}};
+  context.document.createElement=()=>({click(){}});
+  context.document.body={appendChild(){},removeChild(){}};
+  await run('exportStatistics()');
+  expect(csv).toContain('"\'=1+1,example","3","60","1"');
+});
+
+
+test('ordinary settings edits do not overwrite sibling changes', async () => {
+  const store={dsbSettings:{enabled:true,sensitivity:'medium'}};
+  const {run}=load('popup/popup.js',store);
+  await Promise.all([run('saveSettings({enabled:false})'),run('saveSettings({sensitivity:"high"})')]);
+  expect(store.dsbSettings).toEqual({enabled:false,sensitivity:'high'});
+});
+
+test('background returns the configured break duration instead of trusting an old constant', async () => {
+  const {run,listeners}=load('background/background.js',{dsbCustomConfig:{breakDuration:60000}});
+  await run('loadConfig()');const reply=jest.fn();
+  listeners.message({type:'TAKE_BREAK',hostname:'example.com',duration:600000},{tab:{id:1}},reply);
+  expect(reply).toHaveBeenCalledWith(expect.objectContaining({ok:true,duration:60000}));
+  expect(run('breakBlocks["example.com"]-Date.now()')).toBeGreaterThan(59000);
+});

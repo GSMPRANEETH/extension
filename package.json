@@ -5,7 +5,6 @@
   "main": "background/background.js",
   "scripts": {
     "build": "node -e \"require('fs').copyFileSync('background/background.template.js', 'background/background.js')\"",
-    "watch": "chokidar 'utils/constants.js' -c 'npm run build'",
     "lint": "eslint .",
     "test": "jest"
   },
@@ -18,7 +17,6 @@
   "author": "GSMPRANEETH",
   "license": "MIT",
   "devDependencies": {
-    "chokidar": "^3.5.3",
     "eslint": "^8.57.0",
     "jest": "^29.0.0"
   }

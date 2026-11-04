@@ -647,7 +647,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TAKE_BREAK') {
     // Block the hostname for the break duration
     const hostname = message.hostname;
-    const duration = message.duration || CONFIG.breakDuration;
+    const duration = CONFIG.breakDuration;
     if (hostname) {
       breakBlocks[hostname] = Date.now() + duration;
     }
@@ -664,7 +664,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       session.continueClickedAt = 0;
       persistSessions();
     }
-    sendResponse({ ok: true });
+    sendResponse({ ok: true, duration });
     return false;
   }
 

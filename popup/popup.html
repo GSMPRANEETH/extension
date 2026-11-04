@@ -120,12 +120,12 @@
 
   <!-- ── Insights Panel ────────────────────────────────────────────── -->
   <section class="dsb-panel" id="dsb-insights-panel">
-    <div class="dsb-collapsible" id="dsb-insights-toggle" aria-expanded="false">
+    <button type="button" class="dsb-collapsible" id="dsb-insights-toggle" aria-expanded="false" aria-controls="dsb-insights-body">
       <h2 class="dsb-panel-title">📊 Insights & Trends</h2>
       <svg class="dsb-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
-    </div>
+    </button>
 
     <div class="dsb-collapsible-body" id="dsb-insights-body" hidden>
       <!-- Time period selector -->
@@ -141,8 +141,8 @@
       <!-- Charts container -->
       <div id="dsb-charts-container">
         <!-- Charts will be inserted here by JavaScript -->
-        <canvas id="dsb-trends-chart" width="400" height="200"></canvas>
-        <canvas id="dsb-sites-chart" width="400" height="200"></canvas>
+        <canvas role="img" aria-label="Activity by selected period in minutes; export CSV for data" id="dsb-trends-chart" width="400" height="200"></canvas>
+        <canvas role="img" aria-label="Lifetime site activity distribution; export CSV for data" id="dsb-sites-chart" width="400" height="200"></canvas>
       </div>
 
       <!-- Insights container -->
@@ -160,7 +160,7 @@
         <div class="dsb-insight-item">
           <h3 class="dsb-insight-title">Improvement Trend</h3>
           <p class="dsb-insight-value" id="dsb-improvement-trend">—</p>
-          <p class="dsb-insight-label">vs last period</p>
+          <p class="dsb-insight-label">vs prior recorded period</p>
         </div>
       </div>
 
@@ -174,7 +174,7 @@
   <!-- ── Settings Panel ──────────────────────────────────────────────── -->
   <section class="dsb-panel" id="dsb-settings-panel">
     <!-- Collapsible header -->
-    <button class="dsb-collapsible" id="dsb-settings-toggle" aria-expanded="false">
+    <button class="dsb-collapsible" id="dsb-settings-toggle" aria-expanded="false" aria-controls="dsb-settings-body">
       <h2 class="dsb-panel-title">⚙️ Settings</h2>
       <svg class="dsb-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
