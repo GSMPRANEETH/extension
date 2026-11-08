@@ -12,28 +12,15 @@ const SENSITIVITY_LABELS = ['Low', 'Medium', 'High'];
 const ONBOARDING_KEY = 'dsbHasSeenOnboarding';
 const CUSTOM_CONFIG_KEY = 'dsbCustomConfig';
 
-// Default values for UI controls (matches the defaults in background template)
+// Default values for UI controls. Derived from utils/constants.js, which popup.html
+// loads before this script, so every threshold has a single source of truth.
 const UI_DEFAULTS = {
-  contextMultipliers: {
-    'short_form_feed': 1.5,
-    'social_feed': 1.2,
-    'comments_section': 0.8,
-    'news_feed': 1.0,
-    'video_player': 0.3,
-    'search': 0.2,
-    'productive': 0.0,
-    'unknown': 0.5
-  },
-  scoreThresholds: {
-    SAFE: 25,
-    WARNING: 40,
-    STRONG_WARNING: 65
-  },
+  contextMultipliers: { ...CONTEXT_MULTIPLIERS },
+  scoreThresholds: { ...SCORE_THRESHOLDS },
   motivationalMessageFrequency: 1.0,
-  breakDuration: 600000 // 10 minutes in milliseconds
+  breakDuration: BREAK_DURATION, // 10 minutes in milliseconds
+  strongWarningFollowup: STRONG_WARNING_FOLLOWUP
 };
-
-const POPUP_REFRESH_INTERVAL = 5000; // Auto-refresh session and stats every 5 seconds
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 function formatSeconds(totalSeconds) {
@@ -635,8 +622,8 @@ function renderScore(score) {
 
   pill.classList.remove('dsb-score-safe', 'dsb-score-warn', 'dsb-score-danger');
   if (score === null) return;
-  if (score >= 65)       pill.classList.add('dsb-score-danger');
-  else if (score >= 40)  pill.classList.add('dsb-score-warn');
+  if (score >= SCORE_THRESHOLDS.STRONG_WARNING)     pill.classList.add('dsb-score-danger');
+  else if (score >= SCORE_THRESHOLDS.WARNING)       pill.classList.add('dsb-score-warn');
   else                   pill.classList.add('dsb-score-safe');
 }
 
@@ -835,60 +822,38 @@ async function loadAndDisplayInsights() {
  * Updates the insights panel with calculated metrics
  */
 async function updateInsightsDisplay(stats) {
-  // Update focus sessions
-  const focusSessions = calculateFocusSessions(stats);
+  const unit = PERIOD_UNIT_LABELS[activePeriod] || 'day';
+  const now = Date.now();
+
+  // Focus periods: buckets with browsing activity but no warning triggered
   const focusSessionsEl = $('dsb-focus-sessions');
   if (focusSessionsEl) {
-    focusSessionsEl.textContent = focusSessions;
+    focusSessionsEl.textContent = calculateFocusSessions(stats, activePeriod, now);
+  }
+  const focusLabelEl = $('dsb-focus-sessions-label');
+  if (focusLabelEl) {
+    focusLabelEl.textContent = `${unit}s without a warning`;
   }
 
-  // Update time saved (placeholder - would need baseline comparison)
-  const timeSaved = calculateTimeSaved(stats);
+  // Time reclaimed compared to the previous window
   const timeSavedEl = $('dsb-time-saved');
   if (timeSavedEl) {
-    timeSavedEl.textContent = timeSaved === null ? '—' : formatMinutes(timeSaved);
+    timeSavedEl.textContent = formatMinutes(calculateTimeSaved(stats, activePeriod, now));
+  }
+  const timeSavedLabelEl = $('dsb-time-saved-label');
+  if (timeSavedLabelEl) {
+    timeSavedLabelEl.textContent = `vs previous ${TREND_WINDOW} ${unit}s`;
   }
 
-  // Update improvement trend
-  const improvementTrend = calculateImprovementTrend(stats);
+  // Warning trend compared to the previous window
   const improvementTrendEl = $('dsb-improvement-trend');
   if (improvementTrendEl) {
-    improvementTrendEl.textContent = improvementTrend;
+    improvementTrendEl.textContent = calculateImprovementTrend(stats, activePeriod, now);
   }
-}
-
-/**
- * Calculates focus sessions (sessions that ended without warnings)
- * This is a simplified implementation - in reality we'd need to track session outcomes
- */
-function calculateFocusSessions(stats) {
-  // Session outcomes are not recorded, so do not invent a focus-session count.
-  return '—';
-}
-
-/**
- * Calculates estimated time saved compared to a baseline
- * This would need user-defined goals or historical averages
- */
-function calculateTimeSaved(stats) {
-  // Time saved requires a measured baseline that this version does not collect.
-  return null;
-}
-
-/**
- * Calculates improvement trend compared to previous period
- */
-function calculateImprovementTrend(stats) {
-  const periods = stats[`${activePeriod}Stats`] || {};
-  const keys = Object.keys(periods).sort();
-  if (keys.length < 2) return '—';
-  const previous = periods[keys[keys.length - 2]].sessionTime || 0;
-  const current = periods[keys[keys.length - 1]].sessionTime || 0;
-  if (!previous) return '—';
-  // shortcut: raw recorded periods can be partial, normalize complete periods before claiming a rate trend.
-  const change = Math.round((previous - current) / previous * 100);
-  return `${Math.abs(change)}% ${change >= 0 ? 'less' : 'more'} time`;
-
+  const improvementLabelEl = $('dsb-improvement-trend-label');
+  if (improvementLabelEl) {
+    improvementLabelEl.textContent = `warnings vs previous ${TREND_WINDOW} ${unit}s`;
+  }
 }
 
 /**
@@ -920,13 +885,13 @@ function renderTrendsChart(stats, canvas) {
 
   const ctx = canvas.getContext('2d');
 
-  // Get daily stats for the last 7 days
-  const dailyStats = stats[`${activePeriod}Stats`] || {};
-  const dates = Object.keys(dailyStats).sort().slice(-7);
+  // Get the recorded buckets for the active period (last 7 days / weeks / months)
+  const periodStats = stats[`${activePeriod}Stats`] || {};
+  const dates = Object.keys(periodStats).sort().slice(-7);
 
   const data = dates.map(date => {
-    const dayStats = dailyStats[date] || {};
-    return (dayStats.sessionTime || 0) / 60; // Minutes, matching the axis label
+    const bucket = periodStats[date] || {};
+    return (bucket.sessionTime || 0) / 60; // Minutes, matching the axis label
   });
 
   // Clear canvas
@@ -988,9 +953,7 @@ function renderTrendsChart(stats, canvas) {
   dates.forEach((date, index) => {
     const x = padding + (index * (chartWidth / Math.max(data.length - 1, 1)));
     const y = chartHeight + padding + 20;
-    // Show just month-day for brevity
-    const label = date.substring(5); // MM-DD
-    ctx.fillText(label, x, y);
+    ctx.fillText(date.substring(5), x, y);
   });
 
   // Y-axis label

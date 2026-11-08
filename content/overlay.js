@@ -548,7 +548,9 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
       if (response?.ok && Number.isFinite(response.duration) && response.duration > 0) {
         duration = response.duration;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored — the overlay must never break the host page.
+    }
     removeOverlay();
     showBreakScreen(duration);
   });
@@ -562,7 +564,9 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
     snoozedUntil = Date.now() + SNOOZE_DURATION;
     try {
       chrome.runtime.sendMessage({ type: 'SNOOZE' });
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored — the overlay must never break the host page.
+    }
     removeOverlay();
   });
   actions.appendChild(snoozeBtn);
@@ -577,7 +581,9 @@ function showDoomScrollWarning(level, motivationalMessage, stats) {
       // Notify background to re-arm warnings after CONTINUE_REARM_DELAY
       try {
         chrome.runtime.sendMessage({ type: 'CONTINUE_SCROLLING' });
-      } catch (_) {}
+      } catch (_) {
+        // Intentionally ignored — the overlay must never break the host page.
+      }
       removeOverlay();
     });
     actions.appendChild(continueBtn);

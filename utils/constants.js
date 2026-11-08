@@ -3,9 +3,11 @@
  *
  * NOTE: This file is loaded as a content script before content.js and overlay.js
  * so that all constants are available globally. In the background service worker
- * the constants are duplicated inline (Manifest V3 service workers support ES modules
- * but content scripts do not, so we use a simple IIFE assignment to window/globalThis).
+ * the constants are inlined by scripts/build.js, so this file stays the single
+ * source of truth for every threshold, timer and site list.
  */
+
+/* exported DOOM_SCROLL_SITES, PRODUCTIVE_SITES, CONTEXT_MULTIPLIERS, SCORE_THRESHOLDS, MOTIVATIONAL_MESSAGES, ACTIVITY_REPORT_INTERVAL, IDLE_THRESHOLD, SCROLL_THROTTLE, SNOOZE_DURATION, LONG_VIDEO_THRESHOLD, SHORT_VIDEO_THRESHOLD, BOTTOM_DETECTION_THRESHOLD, WHEEL_DELTA_THRESHOLD, SWIPE_THRESHOLD, POPUP_REFRESH_INTERVAL, BREAK_DURATION, BREAK_MIN_DURATION, CONTINUE_REARM_DELAY, SECTION_CHECK_INTERVAL, VIDEO_SCROLL_THRESHOLD, MIN_CODE_BLOCKS_PRODUCTIVE, STRONG_WARNING_FOLLOWUP */
 
 /* ─── Sites monitored by this extension ─────────────────────────────────── */
 const DOOM_SCROLL_SITES = [
