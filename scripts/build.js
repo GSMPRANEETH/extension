@@ -101,10 +101,65 @@ function renderServiceWorker(template, sources) {
     output = output.replace(source.placeholder, sources[source.file]);
   }
 
-  const missing = REQUIRED_CONFIG_KEYS.filter((key) => !new RegExp(`\\b${key}\\s*:`).test(output));
+  // The template used to drift out of sync with the generated file — a missing object
+  // separator made the template a syntax error, and the stale build script shipped the
+  // template anyway. Compiling the output catches that class of mistake before it ships.
+  try {
+    new vm.Script(output, { filename: 'background/background.js' });
+  } catch (err) {
+    throw new Error(`generated background.js is not valid JavaScript: ${err.message}`);
+  }
+
+  // Evaluate the compiled worker in an isolated sandbox with a no-op chrome stub so we
+  // validate DEFAULT_CONFIG properties and date helpers directly instead of regex-matching
+  // raw source text (which comments or unrelated code could satisfy).
+  const noopPromise = () => Promise.resolve({});
+  const noopAsyncVoid = () => Promise.resolve();
+  const sandbox = {
+    structuredClone,
+    chrome: {
+      storage: { local: { get: noopPromise, set: noopAsyncVoid, remove: noopAsyncVoid } },
+      runtime: { onMessage: { addListener() {} }, sendMessage() {} },
+      tabs: {
+        onRemoved: { addListener() {} },
+        query: () => Promise.resolve([]),
+        sendMessage: noopAsyncVoid
+      },
+      alarms: { create() {}, onAlarm: { addListener() {} } }
+    },
+    console: { log() {}, info() {}, warn() {}, error() {} },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval
+  };
+  const context = vm.createContext(sandbox);
+  const helperExports = REQUIRED_DATE_HELPERS.map(
+    (name) => `${name}: typeof ${name} === 'function' ? ${name} : undefined`
+  ).join(', ');
+  const inspectSnippet =
+    `\n;globalThis.__buildCheck = { ` +
+    `defaultConfig: typeof DEFAULT_CONFIG !== 'undefined' ? DEFAULT_CONFIG : undefined, ` +
+    `helpers: { ${helperExports} } };\n`;
+
+  try {
+    vm.runInContext(output + inspectSnippet, context, { filename: 'background/background.js' });
+  } catch (err) {
+    throw new Error(`generated background.js failed build verification: ${err.message}`);
+  }
+
+  const { defaultConfig, helpers } = context.__buildCheck || {};
+  if (!defaultConfig || typeof defaultConfig !== 'object') {
+    throw new Error('generated background.js does not define DEFAULT_CONFIG.');
+  }
+
+  const missing = REQUIRED_CONFIG_KEYS.filter(
+    (key) => !Object.prototype.hasOwnProperty.call(defaultConfig, key)
+  );
   if (missing.length > 0) {
     throw new Error(
-      'generated background.js is missing required config keys:\n   - ' + missing.join('\n   - ')
+      'generated background.js DEFAULT_CONFIG is missing required config keys:\n   - ' +
+        missing.join('\n   - ')
     );
   }
 
@@ -116,22 +171,13 @@ function renderServiceWorker(template, sources) {
   }
 
   const missingHelpers = REQUIRED_DATE_HELPERS.filter(
-    (name) => !new RegExp(`function\\s+${name}\\s*\\(`).test(output)
+    (name) => typeof helpers?.[name] !== 'function'
   );
   if (missingHelpers.length > 0) {
     throw new Error(
       'generated background.js is missing required date helpers:\n   - ' +
         missingHelpers.join('\n   - ')
     );
-  }
-
-  // The template used to drift out of sync with the generated file — a missing object
-  // separator made the template a syntax error, and the stale build script shipped the
-  // template anyway. Compiling the output catches that class of mistake before it ships.
-  try {
-    new vm.Script(output, { filename: 'background/background.js' });
-  } catch (err) {
-    throw new Error(`generated background.js is not valid JavaScript: ${err.message}`);
   }
 
   return output;

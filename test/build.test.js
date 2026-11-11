@@ -88,10 +88,16 @@ describe('renderServiceWorker', () => {
     expect(() => renderServiceWorker(template, readSources())).toThrow(/strongWarningFollowup/);
   });
 
+  it('throws when contextMultipliers is dropped from DEFAULT_CONFIG even if referenced elsewhere', () => {
+    const template = readTemplate().replace('contextMultipliers: { ...CONTEXT_MULTIPLIERS },', '');
+
+    expect(() => renderServiceWorker(template, readSources())).toThrow(/contextMultipliers/);
+  });
+
   it('throws when a required date helper is missing from the shared source', () => {
     const sources = readSources();
     sources['utils/dates.js'] = sources['utils/dates.js'].replace(
-      /function getWeekKey[\s\S]*?\n}\n/,
+      /function getWeekKey[\s\S]*?\r?\n}\r?\n/,
       ''
     );
 

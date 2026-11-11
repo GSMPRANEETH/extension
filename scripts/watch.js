@@ -41,8 +41,30 @@ function scheduleBuild(file) {
 
 build();
 
+// Watch parent directories instead of individual file paths so atomic saves
+// (temp-file + rename on Linux/macOS) cannot orphan the watcher on a stale inode.
+const watchedByDir = new Map();
 for (const file of WATCHED) {
-  fs.watch(path.join(ROOT, file), { persistent: true }, () => scheduleBuild(file));
+  const absPath = path.join(ROOT, file);
+  const dir = path.dirname(absPath);
+  const base = path.basename(absPath);
+  if (!watchedByDir.has(dir)) {
+    watchedByDir.set(dir, new Map());
+  }
+  watchedByDir.get(dir).set(base, file);
+}
+
+for (const [dir, targets] of watchedByDir.entries()) {
+  fs.watch(dir, { persistent: true }, (_eventType, filename) => {
+    if (!filename) {
+      scheduleBuild(Array.from(targets.values()).join(', '));
+      return;
+    }
+    const matched = targets.get(filename.toString());
+    if (matched) {
+      scheduleBuild(matched);
+    }
+  });
 }
 
 console.log(`👀 Watching ${WATCHED.join(', ')}. Press Ctrl+C to stop.`);

@@ -1,6 +1,6 @@
 # 🛡️ Doom Scroll Blocker
 
-A Chrome extension that helps you break the doom-scrolling habit on YouTube Shorts, Instagram Reels, TikTok and Twitter/X — while **never** interrupting long videos like lectures or movies.
+A Chrome extension that helps you break the doom-scrolling habit on YouTube Shorts, Instagram Reels, TikTok and Twitter/X — while strongly lowering scores during long videos like lectures or movies.
 
 ---
 
@@ -8,7 +8,7 @@ A Chrome extension that helps you break the doom-scrolling habit on YouTube Shor
 
 - **Smart doom-scroll detection** — a weighted scoring algorithm that analyses session length, scroll depth, key presses, infinite-feed triggers and short-video consumption.
 - **Context-aware scoring** — the raw score is scaled by the kind of page you are on, so a short-form feed counts far more than a search results page, and productive pages never trigger a warning.
-- **Long-video bypass** — warnings are suppressed automatically while a video longer than 10 minutes is playing (lectures, movies, documentaries).
+- **Long-video score reduction** — subtracts 50 points from the raw score while a video longer than 10 minutes is playing (and dedicated video-player pages carry a ×0.3 context multiplier), helping avoid false triggers during lectures, movies or documentaries unless sustained feed activity keeps the final score above threshold.
 - **Idle detection** — tracking pauses after 2 minutes of inactivity, which avoids false positives when you walk away from your desk.
 - **Two warning levels**
   - ⚠️ *Warning* — overlay with a motivational message, live statistics and a 5-minute snooze.
@@ -70,20 +70,19 @@ Every 15 seconds the content script sends an `ACTIVITY_REPORT` to the background
 | Productive page | ×0.0 — never triggers |
 | Unknown | ×0.5 |
 
-**Thresholds** (`SCORE_THRESHOLDS` in `utils/constants.js`):
+**Default thresholds at medium sensitivity** (`SCORE_THRESHOLDS` in `utils/constants.js`):
 
 | Score | Result |
 |-------|--------|
-| `< 25` | Safe — no action |
-| `≥ 25` | Warning overlay |
-| `≥ 40` | Strong warning overlay |
-| `≥ 65` | Critical — treated as a strong warning |
+| `< 40` | No warning overlay |
+| `40–64` | Warning overlay |
+| `≥ 65` | Strong warning overlay |
 
 ### Monitored sites
 
 The extension watches **16 sites** by default: YouTube, Instagram, TikTok, Twitter, X, Reddit, Facebook, LinkedIn, Pinterest, Tumblr, 9GAG, BuzzFeed, Imgur, Hacker News, Digg and Quora.
 
-**33 sites are never blocked**, including GitHub, GitLab, Stack Overflow, MDN, Google Docs, Notion, Wikipedia, arXiv, Coursera, LeetCode, FreeCodeCamp, Gmail, Outlook, Google Calendar, Slack, Teams and Zoom. The two lists are kept separate in `utils/constants.js`.
+**`PRODUCTIVE_SITES` lists 31 entries** (alongside additional regex patterns in `content/content.js`), including GitHub, GitLab, Stack Overflow, MDN, Google Docs, Notion, Wikipedia, arXiv, Coursera, LeetCode, FreeCodeCamp, Gmail, Outlook, Google Calendar, Slack, Teams and Zoom. The two lists are kept separate in `utils/constants.js`.
 
 ---
 
