@@ -2,6 +2,15 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
+// The popup is a plain script that relies on the shared sources being loaded first,
+// exactly as popup.html loads them.
+const POPUP_SHARED_SCRIPTS = [
+  'utils/constants.js',
+  'utils/dates.js',
+  'utils/periods.js',
+  'utils/insights.js',
+];
+
 function load(file, store = {}, elements = {}) {
   const listeners = {};
   const chrome = {
@@ -18,6 +27,11 @@ function load(file, store = {}, elements = {}) {
     document: { addEventListener() {}, getElementById: id => elements[id] },
     window: { addEventListener() {} }, confirm: () => true, setTimeout: () => 0,
   });
+  if (file === 'popup/popup.js') {
+    for (const shared of POPUP_SHARED_SCRIPTS) {
+      vm.runInContext(fs.readFileSync(path.join(__dirname, '..', shared), 'utf8'), context);
+    }
+  }
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
   return { context, chrome, listeners, run: code => vm.runInContext(code, context) };
 }
@@ -83,13 +97,18 @@ test('settings reset preserves historical stats and sessions', async () => {
   expect(store.dsbSettings).toBeUndefined();
 });
 
-test('weekly selector reads weekly buckets and unsupported estimates are not fabricated', () => {
+test('weekly selector reads weekly buckets and the estimates come from recorded activity', () => {
   const labels=[];const ctx={clearRect(){},fillText:text=>labels.push(text),beginPath(){},moveTo(){},lineTo(){},stroke(){},arc(){},fill(){},save(){},restore(){},translate(){},rotate(){}};
   const {run,context}=load('popup/popup.js');context.canvas={width:300,height:200,getContext:()=>ctx};
   run('activePeriod="weekly";renderTrendsChart({weeklyStats:{"2026-W44":{sessionTime:12}}},canvas)');
   expect(labels).toContain('W44');
-  expect(run('calculateTimeSaved({})')).toBeNull();
-  expect(run('calculateFocusSessions({totalSessionTime:100000})')).toBe('—');
+  // Without recorded buckets there is nothing to report, so no number is invented.
+  expect(run('calculateTimeSaved({}, "daily", Date.now())')).toBe(0);
+  expect(run('calculateFocusSessions({}, "daily", Date.now())')).toBe(0);
+  // With a recorded bucket the metrics reflect it.
+  const today = run('getDateKey(Date.now())');
+  const stats = JSON.stringify({ dailyStats: { [today]: { sessionTime: 120, warningsTriggered: 0 } } });
+  expect(run(`calculateFocusSessions(${stats}, "daily", Date.now())`)).toBe(1);
 });
 
 

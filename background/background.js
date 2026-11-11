@@ -9,82 +9,131 @@
  *  5. Use chrome.alarms for periodic cleanup of stale session data.
  */
 
+/* ─── Shared constants (inlined from utils/constants.js by scripts/build.js) ─────────────── */
+/**
+ * constants.js — Shared constants for the Doom Scroll Blocker extension.
+ *
+ * NOTE: This file is loaded as a content script before content.js and overlay.js
+ * so that all constants are available globally. In the background service worker
+ * the constants are inlined by scripts/build.js, so this file stays the single
+ * source of truth for every threshold, timer and site list.
+ */
+
+/* exported DOOM_SCROLL_SITES, PRODUCTIVE_SITES, CONTEXT_MULTIPLIERS, SCORE_THRESHOLDS, MOTIVATIONAL_MESSAGES, ACTIVITY_REPORT_INTERVAL, IDLE_THRESHOLD, SCROLL_THROTTLE, SNOOZE_DURATION, LONG_VIDEO_THRESHOLD, SHORT_VIDEO_THRESHOLD, BOTTOM_DETECTION_THRESHOLD, WHEEL_DELTA_THRESHOLD, SWIPE_THRESHOLD, POPUP_REFRESH_INTERVAL, BREAK_DURATION, BREAK_MIN_DURATION, CONTINUE_REARM_DELAY, SECTION_CHECK_INTERVAL, VIDEO_SCROLL_THRESHOLD, MIN_CODE_BLOCKS_PRODUCTIVE, STRONG_WARNING_FOLLOWUP */
+
+/* ─── Sites monitored by this extension ─────────────────────────────────── */
+const DOOM_SCROLL_SITES = [
+  'youtube.com', 'instagram.com', 'tiktok.com', 'twitter.com', 'x.com',
+  'reddit.com', 'facebook.com', 'linkedin.com', 'pinterest.com',
+  'tumblr.com', '9gag.com', 'buzzfeed.com', 'imgur.com',
+  'news.ycombinator.com', 'digg.com', 'quora.com'
+];
+
+/* ─── Sites that should NEVER be blocked ─────────────────────────────────── */
+const PRODUCTIVE_SITES = [
+  'github.com', 'gitlab.com', 'bitbucket.org',
+  'stackoverflow.com', 'stackexchange.com',
+  'developer.mozilla.org', 'w3schools.com',
+  'docs.google.com', 'drive.google.com',
+  'notion.so', 'trello.com', 'asana.com',
+  'wikipedia.org', 'wikimedia.org',
+  'arxiv.org', 'scholar.google.com',
+  'coursera.org', 'udemy.com', 'edx.org', 'khanacademy.org',
+  'leetcode.com', 'hackerrank.com', 'codeforces.com',
+  'geeksforgeeks.org', 'freecodecamp.org',
+  'mail.google.com', 'outlook.live.com',
+  'calendar.google.com', 'slack.com',
+  'teams.microsoft.com', 'zoom.us'
+];
+
+/* ─── Context multipliers applied to raw doom scores ─────────────────────── */
+const CONTEXT_MULTIPLIERS = {
+  'short_form_feed':  1.5,  // Shorts / Reels / TikTok — maximum weight
+  'social_feed':      1.2,  // Twitter/Reddit/Facebook feed — high weight
+  'comments_section': 0.8,  // Comments — moderate
+  'news_feed':        1.0,  // News — normal weight
+  'video_player':     0.3,  // Watching long videos — very low
+  'search':           0.2,  // Search results — very low
+  'productive':       0.0,  // Educational/work — NEVER trigger
+  'unknown':          0.5   // Unknown sites — cautious, low weight
+};
+
+/* ─── Score thresholds for the doom-scroll detection algorithm ───────────── */
+const SCORE_THRESHOLDS = {
+  SAFE: 25,
+  WARNING: 40,
+  STRONG_WARNING: 65
+};
+
+/* ─── Motivational messages shown in overlays (randomly selected) ─────────── */
+const MOTIVATIONAL_MESSAGES = [
+  "Your future self will thank you for stopping now.",
+  "Time is your most valuable asset. Invest it wisely.",
+  "Every minute counts. What could you accomplish instead?",
+  "Break the scroll cycle. Your mind deserves a rest.",
+  "The feed will still be here later. Your time won't.",
+  "Step away and stretch. Your body will thank you.",
+  "Mindful browsing > mindless scrolling.",
+  "You've consumed enough content. Time to create something.",
+  "Take a deep breath. Is this scroll adding value to your life?",
+  "Remember why you opened your browser. Was it for this?"
+];
+
+/* ─── Timing constants (all values in milliseconds unless stated) ─────────── */
+const ACTIVITY_REPORT_INTERVAL  = 15000; // Send activity report every 15 seconds
+const IDLE_THRESHOLD             = 120000; // 2 minutes — stop tracking when idle
+const SCROLL_THROTTLE            = 200;    // Throttle scroll events to once per 200ms
+const SNOOZE_DURATION            = 300000; // 5 minutes — "Give me 5 more minutes" snooze
+const LONG_VIDEO_THRESHOLD       = 600;    // 10 minutes in seconds — bypass warnings
+const SHORT_VIDEO_THRESHOLD      = 120;    // 2 minutes in seconds — counts as short video
+const BOTTOM_DETECTION_THRESHOLD = 150;    // px from bottom to count as "reached bottom"
+const WHEEL_DELTA_THRESHOLD      = 30;     // minimum wheel deltaY to count as a scroll
+const SWIPE_THRESHOLD            = 50;     // minimum touch distance (px) to count as a swipe
+const POPUP_REFRESH_INTERVAL     = 5000;   // Popup auto-refresh interval (5 seconds)
+const BREAK_DURATION             = 600000; // 10 minutes — default break duration
+const BREAK_MIN_DURATION         = 120000; // 2 minutes — minimum break before "I'm back" is enabled
+const CONTINUE_REARM_DELAY       = 180;    // seconds after "Continue Scrolling" before warnings re-trigger
+const SECTION_CHECK_INTERVAL     = 1000;   // 1 second — how often to poll for URL/section changes
+const VIDEO_SCROLL_THRESHOLD     = 0.2;    // fraction of viewport height — player is "past" if bottom < 20%
+const MIN_CODE_BLOCKS_PRODUCTIVE = 3;      // minimum <pre code> blocks to classify page as productive
+const STRONG_WARNING_FOLLOWUP    = 300;    // 5 minutes — time after strong warning before final reminder
+
+
 /* ─── Load configuration from storage with defaults ────────────────────────────────────── */
-// Default configuration (matches utils/constants.js)
+// Default configuration. Every value is derived from the shared constants above, so
+// utils/constants.js remains the single source of truth. Keys are camelCase because they
+// are persisted verbatim in chrome.storage.local under `dsbCustomConfig`.
 const DEFAULT_CONFIG = {
   /* ─── Sites monitored by this extension ─────────────────────────────────────── */
-  doomScrollSites: [
-    'youtube.com', 'instagram.com', 'tiktok.com', 'twitter.com', 'x.com',
-    'reddit.com', 'facebook.com', 'linkedin.com', 'pinterest.com',
-    'tumblr.com', '9gag.com', 'buzzfeed.com', 'imgur.com',
-    'news.ycombinator.com', 'digg.com', 'quora.com'
-  ],
+  doomScrollSites: [...DOOM_SCROLL_SITES],
   /* ─── Sites that should NEVER be blocked ─────────────────────────────────────── */
-  productiveSites: [
-    'github.com', 'gitlab.com', 'bitbucket.org',
-    'stackoverflow.com', 'stackexchange.com',
-    'developer.mozilla.org', 'w3schools.com',
-    'docs.google.com', 'drive.google.com',
-    'notion.so', 'trello.com', 'asana.com',
-    'wikipedia.org', 'wikimedia.org',
-    'arxiv.org', 'scholar.google.com',
-    'coursera.org', 'udemy.com', 'edx.org', 'khanacademy.org',
-    'leetcode.com', 'hackerrank.com', 'codeforces.com',
-    'geeksforgeeks.org', 'freecodecamp.org',
-    'mail.google.com', 'outlook.live.com',
-    'calendar.google.com', 'slack.com',
-    'teams.microsoft.com', 'zoom.us'
-  ],
+  productiveSites: [...PRODUCTIVE_SITES],
   /* ─── Context multipliers applied to raw doom scores ─────────────────────── */
-  contextMultipliers: {
-    'short_form_feed':  1.5,  // Shorts / Reels / TikTok — maximum weight
-    'social_feed':      1.2,  // Twitter/Reddit/Facebook feed — high weight
-    'comments_section': 0.8,  // Comments — moderate
-    'news_feed':        1.0,  // News — normal weight
-    'video_player':     0.3,  // Watching long videos — very low
-    'search':           0.2,  // Search results — very low
-    'productive':       0.0,  // Educational/work — NEVER trigger
-    'unknown':          0.5   // Unknown sites — cautious, low weight
-  },
+  contextMultipliers: { ...CONTEXT_MULTIPLIERS },
   /* ─── Score thresholds for the doom-scroll detection algorithm ───────────── */
-  scoreThresholds: {
-    SAFE: 25,
-    WARNING: 40,
-    STRONG_WARNING: 65
-  },
+  scoreThresholds: { ...SCORE_THRESHOLDS },
   /* ─── Motivational messages shown in overlays (randomly selected) ─────────── */
-  motivationalMessages: [
-    "Your future self will thank you for stopping now.",
-    "Time is your most valuable asset. Invest it wisely.",
-    "Every minute counts. What could you accomplish instead?",
-    "Break the scroll cycle. Your mind deserves a rest.",
-    "The feed will still be here later. Your time won't.",
-    "Step away and stretch. Your body will thank you.",
-    "Mindful browsing > mindless scrolling.",
-    "You've consumed enough content. Time to create something.",
-    "Take a deep breath. Is this scroll adding value to your life?",
-    "Remember why you opened your browser. Was it for this?"
-  ],
+  motivationalMessages: [...MOTIVATIONAL_MESSAGES],
   /* ─── Timing constants (all values in milliseconds unless stated) ─────────── */
-  activityReportInterval: 15000, // Send activity report every 15 seconds
-  idleThreshold:             120000, // 2 minutes — stop tracking when idle
-  scrollThrottle:            200,    // Throttle scroll events to once per 200ms
-  snoozeDuration:            300000, // 5 minutes — "Give me 5 more minutes" snooze
-  longVideoThreshold:        600,    // 10 minutes in seconds — bypass warnings
-  shortVideoThreshold:       120,    // 2 minutes in seconds — counts as short video
-  bottomDetectionThreshold:  150,    // px from bottom to count as "reached bottom"
-  wheelDeltaThreshold:       30,     // minimum wheel deltaY to count as a scroll
-  swipeThreshold:            50,     // minimum touch distance (px) to count as a swipe
-  popupRefreshInterval:      5000,   // Popup auto-refresh interval (5 seconds)
-  breakDuration:             600000, // 10 minutes — default break duration
-  breakMinDuration:          120000, // 2 minutes — minimum break before "I'm back" is enabled
-  continueRearmDelay:        180,    // seconds after "Continue Scrolling" before warnings re-trigger
-  sectionCheckInterval:      1000,   // 1 second — how often to poll for URL/section changes
-  videoScrollThreshold:      0.2,    // fraction of viewport height — player is "past" if bottom < 20%
-  minCodeBlocksProductive:   3,      // minimum <pre code> blocks to classify page as productive
+  activityReportInterval: ACTIVITY_REPORT_INTERVAL,       // Send activity report every 15 seconds
+  idleThreshold: IDLE_THRESHOLD,                           // 2 minutes - stop tracking when idle
+  scrollThrottle: SCROLL_THROTTLE,                         // Throttle scroll events to once per 200ms
+  snoozeDuration: SNOOZE_DURATION,                         // 5 minutes - "Give me 5 more minutes" snooze
+  longVideoThreshold: LONG_VIDEO_THRESHOLD,                // 10 minutes in seconds - bypass warnings
+  shortVideoThreshold: SHORT_VIDEO_THRESHOLD,              // 2 minutes in seconds - counts as short video
+  bottomDetectionThreshold: BOTTOM_DETECTION_THRESHOLD,    // px from bottom to count as "reached bottom"
+  wheelDeltaThreshold: WHEEL_DELTA_THRESHOLD,              // minimum wheel deltaY to count as a scroll
+  swipeThreshold: SWIPE_THRESHOLD,                         // minimum touch distance (px) to count as a swipe
+  popupRefreshInterval: POPUP_REFRESH_INTERVAL,            // Popup auto-refresh interval (5 seconds)
+  breakDuration: BREAK_DURATION,                           // 10 minutes - default break duration
+  breakMinDuration: BREAK_MIN_DURATION,                    // 2 minutes - minimum break before "I'm back" is enabled
+  continueRearmDelay: CONTINUE_REARM_DELAY,                // seconds after "Continue Scrolling" before warnings re-trigger
+  sectionCheckInterval: SECTION_CHECK_INTERVAL,            // 1 second - how often to poll for URL/section changes
+  videoScrollThreshold: VIDEO_SCROLL_THRESHOLD,            // fraction of viewport height - player is "past" if bottom < 20%
+  minCodeBlocksProductive: MIN_CODE_BLOCKS_PRODUCTIVE,     // minimum <pre code> blocks to classify page as productive
   /* ─── Customizable settings (exposed in UI) ──────────────────────── */
-  motivationalMessageFrequency: 1.0, // Probability of showing a motivational message (0-1),
-  STRONG_WARNING_FOLLOWUP: 300    // 5 minutes — time after strong warning before final reminder
+  motivationalMessageFrequency: 1.0,                       // Probability of showing a motivational message (0-1)
+  strongWarningFollowup: STRONG_WARNING_FOLLOWUP           // 5 minutes - time after strong warning before final reminder
 };
 
 let CONFIG = structuredClone(DEFAULT_CONFIG);
@@ -198,9 +247,22 @@ async function persistSessions() {
   }
 }
 
-/* ─── Date helper functions for time-based statistics ───────────────────── */
+/* ─── Date helper functions (inlined from utils/dates.js by scripts/build.js) ──────────── */
 /**
- * Returns date string in YYYY-MM-DD format from timestamp
+ * dates.js — Shared date-bucket helpers.
+ *
+ * The extension groups activity statistics into daily, weekly and monthly buckets.
+ * The bucket keys must be identical everywhere they are produced or compared, so the
+ * helpers live here and are inlined into the service worker at build time
+ * (see scripts/build.js) and loaded directly by the popup.
+ *
+ * NOTE: This file is loaded as a plain script. It cannot use ES module syntax.
+ */
+
+/* exported getDateKey, getWeekKey, getMonthKey */
+
+/**
+ * Returns the daily bucket key (YYYY-MM-DD) for a timestamp.
  */
 function getDateKey(timestamp) {
   const date = new Date(timestamp);
@@ -208,25 +270,36 @@ function getDateKey(timestamp) {
 }
 
 /**
- * Returns week string in YYYY-WW format from timestamp
- * Using ISO week date format
+ * Returns the ISO-8601 weekly bucket key (YYYY-Www) for a timestamp.
+ *
+ * ISO 8601 weeks start on Monday, and week 1 is the week containing January 4th.
+ * The Thursday of a week determines which ISO year that week belongs to, which is why
+ * a date in late December can belong to week 1 of the following year.
  */
 function getWeekKey(timestamp) {
   const date = new Date(timestamp);
-  date.setUTCHours(0, 0, 0, 0);
-  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNumber = (target.getUTCDay() + 6) % 7; // Monday = 0 … Sunday = 6
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3); // shift to the Thursday of this week
+
+  const isoYear = target.getUTCFullYear();
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4));
+  const firstDayNumber = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNumber + 3);
+
+  const week =
+    1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return `${isoYear}-W${String(week).padStart(2, '0')}`;
 }
 
 /**
- * Returns month string in YYYY-MM format from timestamp
+ * Returns the monthly bucket key (YYYY-MM) for a timestamp.
  */
 function getMonthKey(timestamp) {
   const date = new Date(timestamp);
-  return date.toISOString().substring(0, 7); // YYYY-MM
+  return date.toISOString().substring(0, 7);
 }
+
 
 /* ─── Restore sessions from chrome.storage.local on startup ─────────────── */
 async function restoreSessions() {
@@ -513,7 +586,7 @@ async function handleActivityReport(tabId, data) {
       session.strongWarningTime > 0
     ) {
       const elapsed = (Date.now() - session.strongWarningTime) / 1000;
-      if (elapsed >= CONFIG.STRONG_WARNING_FOLLOWUP) {
+      if (elapsed >= CONFIG.strongWarningFollowup) {
         session.finalReminderSent = true;
         warningTriggered = true;
         await sendWarning(tabId, 'strong', '🚨 Final reminder: ' + randomMessage());

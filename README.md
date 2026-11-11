@@ -1,24 +1,27 @@
 # 🛡️ Doom Scroll Blocker
 
-A Chrome Extension that helps you break the doom-scrolling habit on YouTube Shorts, Instagram Reels, TikTok, and Twitter/X — while **never** interrupting long videos like lectures or movies.
+A Chrome extension that helps you break the doom-scrolling habit on YouTube Shorts, Instagram Reels, TikTok and Twitter/X — while strongly lowering scores during long videos like lectures or movies.
 
 ---
 
 ## ✨ Features
 
-- **Smart Doom-Scroll Detection** — a weighted scoring algorithm that analyses scroll depth, key presses, infinite-feed triggers, and short-video consumption to detect problematic browsing patterns.
-- **Long-Video Bypass** — automatically suppresses all warnings when a video longer than 10 minutes is playing (lectures, movies, documentaries).
-- **Idle Detection** — pauses tracking when you walk away from your desk (2-minute idle threshold), avoiding false positives.
-- **Two Warning Levels**
-  - ⚠️ *Warning* — gentle overlay with motivational message, stats, and a 5-minute snooze option.
-  - 🚨 *Strong Warning* — red overlay with a mandatory 60-second countdown before you can dismiss it.
-- **Final Reminder** — if you dismiss a strong warning and keep scrolling for 5 more minutes, a final reminder fires.
-- **Popup Dashboard** — view your current session score (colour-coded green/yellow/red), scroll counts, aggregate daily stats, and top doom-scroll sites.
-- **Configurable Sensitivity** — Low / Medium / High sensitivity slider adjusts all score thresholds.
-- **Whitelist** — add any domain to never trigger warnings on that site.
-- **Motivational Messages** — a pool of 10 messages randomly shown in overlays (can be toggled off).
-- **Data Export/Import** — export or import your settings, whitelist, and preferences as a JSON file.
-- **Shadow DOM Isolation** — overlay UI is rendered inside a Shadow DOM to avoid any conflicts with host-page styles.
+- **Smart doom-scroll detection** — a weighted scoring algorithm that analyses session length, scroll depth, key presses, infinite-feed triggers and short-video consumption.
+- **Context-aware scoring** — the raw score is scaled by the kind of page you are on, so a short-form feed counts far more than a search results page, and productive pages never trigger a warning.
+- **Long-video score reduction** — subtracts 50 points from the raw score while a video longer than 10 minutes is playing (and dedicated video-player pages carry a ×0.3 context multiplier), helping avoid false triggers during lectures, movies or documentaries unless sustained feed activity keeps the final score above threshold.
+- **Idle detection** — tracking pauses after 2 minutes of inactivity, which avoids false positives when you walk away from your desk.
+- **Two warning levels**
+  - ⚠️ *Warning* — overlay with a motivational message, live statistics and a 5-minute snooze.
+  - 🚨 *Strong warning* — red overlay with a mandatory countdown before it can be dismissed.
+- **Final reminder** — dismissing a strong warning and scrolling for 5 more minutes triggers one last reminder.
+- **Take-a-break mode** — the overlay can block a site for a configurable break (10 minutes by default) and shows a full-screen break card until the break is over.
+- **Insights dashboard** — daily / weekly / monthly selectors, a trends chart, a per-site breakdown, and three headline metrics (focus periods, time saved, warning trend).
+- **Statistics export** — download the accumulated statistics as a CSV file.
+- **First-run onboarding** — a four-step introduction shown the first time the popup is opened.
+- **Whitelist** — never trigger warnings on the domains you choose.
+- **Motivational messages** — a pool of 10 messages, randomly shown in overlays, can be switched off.
+- **Settings export / import** — back up or move your settings, whitelist and preferences as a JSON file.
+- **Shadow DOM isolation** — the overlay UI is rendered inside a Shadow DOM so it never conflicts with the host page's styles.
 
 ---
 
@@ -28,62 +31,58 @@ A Chrome Extension that helps you break the doom-scrolling habit on YouTube Shor
 2. Open **Chrome** and navigate to `chrome://extensions`.
 3. Enable **Developer mode** (toggle in the top-right corner).
 4. Click **Load unpacked** and select the root folder of this repository (the one containing `manifest.json`).
-5. The 🛡️ Doom Scroll Blocker icon will appear in your toolbar.
-
-> **Note:** Because PNG icons are minimal placeholders, the toolbar icon will appear as a teal square. Replace the files in `icons/` with proper artwork for production use. The `icons/icon.svg` file contains a reference SVG design.
+5. Build the service worker first (see [Development](#-development)) — `background/background.js` is generated from a template.
 
 ---
 
-## ⚙️ How It Works
+## 🧮 Doom-scroll scoring algorithm
 
-### Architecture
+Every 15 seconds the content script sends an `ACTIVITY_REPORT` to the background service worker. The worker adds up the raw score and then multiplies it by a context multiplier.
 
-```
-extension/
-├── manifest.json             # Manifest V3 — declares permissions, content scripts, service worker
-├── utils/constants.js        # Shared constants loaded before all content scripts
-├── background/background.js  # Service worker — scoring, state management, alarms
-├── content/
-│   ├── content.js            # Tracks scroll, key presses, video duration; sends activity reports
-│   ├── overlay.js            # Renders warning overlays inside a Shadow DOM
-│   └── overlay.css           # Minimal document-level styles for the shadow host
-├── popup/
-│   ├── popup.html            # Popup layout
-│   ├── popup.js              # Reads storage, renders stats & settings
-│   └── popup.css             # Dark-theme popup styles
-└── icons/
-    ├── icon.svg              # Reference SVG design
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
-```
-
-### Doom-Scroll Scoring Algorithm
-
-Every 30 seconds the content script sends an `ACTIVITY_REPORT` to the background service worker. The worker computes a score:
+**Raw score:**
 
 | Condition | Points |
 |-----------|--------|
-| Session > 10 minutes | +30 |
-| > 100 scroll events | +25 |
-| > 50 doom-scroll key presses | +15 |
-| Hit feed bottom > 5 times | +20 |
-| > 10 short videos (< 2 min) | +25 |
-| Idle time < 30 s (constant engagement) | −10 |
-| Long video (> 10 min) playing | −50 |
+| Session longer than 60 s | +10 |
+| Session longer than 180 s | +15 |
+| Session longer than 300 s | +15 |
+| More than 10 scroll events | +10 |
+| More than 30 scroll events | +10 |
+| More than 60 scroll events | +10 |
+| More than 10 key presses | +10 |
+| More than 30 key presses | +10 |
+| Reached the feed bottom more than 3 times | +15 |
+| More than 3 short videos (under 2 min) | +10 |
+| More than 8 short videos (under 2 min) | +10 |
+| Idle for less than 10 s (constant engagement) | +5 |
+| Long video (over 10 min) playing | −50 |
 
-**Thresholds:**
-- Score ≥ 60 → Warning overlay
-- Score ≥ 80 → Strong warning overlay
-- Score < 40 → Safe, no action
+**Context multipliers** (`utils/constants.js`):
 
-### Supported Sites
+| Page context | Multiplier |
+|--------------|-----------|
+| Short-form feed (Shorts / Reels / TikTok) | ×1.5 |
+| Social feed (Twitter / Reddit / Facebook) | ×1.2 |
+| Comments section | ×0.8 |
+| News feed | ×1.0 |
+| Video player | ×0.3 |
+| Search results | ×0.2 |
+| Productive page | ×0.0 — never triggers |
+| Unknown | ×0.5 |
 
-- YouTube (`youtube.com`)
-- Instagram (`instagram.com`)
-- TikTok (`tiktok.com`)
-- Twitter (`twitter.com`)
-- X (`x.com`)
+**Default thresholds at medium sensitivity** (`SCORE_THRESHOLDS` in `utils/constants.js`):
+
+| Score | Result |
+|-------|--------|
+| `< 40` | No warning overlay |
+| `40–64` | Warning overlay |
+| `≥ 65` | Strong warning overlay |
+
+### Monitored sites
+
+The extension watches **16 sites** by default: YouTube, Instagram, TikTok, Twitter, X, Reddit, Facebook, LinkedIn, Pinterest, Tumblr, 9GAG, BuzzFeed, Imgur, Hacker News, Digg and Quora.
+
+**`PRODUCTIVE_SITES` lists 31 entries** (alongside additional regex patterns in `content/content.js`), including GitHub, GitLab, Stack Overflow, MDN, Google Docs, Notion, Wikipedia, arXiv, Coursera, LeetCode, FreeCodeCamp, Gmail, Outlook, Google Calendar, Slack, Teams and Zoom. The two lists are kept separate in `utils/constants.js`.
 
 ---
 
@@ -93,13 +92,46 @@ Open the extension popup and expand **⚙️ Settings**:
 
 | Setting | Description |
 |---------|-------------|
-| Enable/Disable | Master toggle to pause all tracking |
-| Detection Sensitivity | Low / Medium / High — scales all score thresholds |
-| Motivational Messages | Toggle the motivational quote in overlays on/off |
-| Whitelist | Add domains that should never trigger warnings |
-| Data Export/Import | Export settings as JSON file or import from a previously exported file |
+| Enable / Disable | Master toggle that pauses all tracking |
+| Detection sensitivity | Low / Medium / High — scales the score thresholds |
+| Motivational messages | Show the motivational quote in overlays |
+| Whitelist | Domains that should never trigger a warning |
+| Data export / import | Save your settings as a JSON file, or restore a previous export |
+| Advanced customization | Context multipliers, break duration, snooze duration, warning follow-up delay |
+| Export statistics | Download the accumulated statistics as CSV |
 
 Click **Reset Statistics** in the footer to clear all accumulated data.
+
+---
+
+## 🛠 Development
+
+The extension has no runtime dependencies. The tooling is plain Node.
+
+```bash
+npm install          # install the dev dependencies (ESLint, Jest)
+npm run build        # generate background/background.js from the template
+npm run watch        # rebuild automatically when a shared source changes
+npm test             # run the Jest test suite
+npm run lint         # run ESLint over the whole repository
+```
+
+### How the code is organised
+
+| Path | Purpose |
+|------|---------|
+| `utils/constants.js` | **Single source of truth** for every threshold, timer and site list |
+| `utils/dates.js` | Daily / ISO-weekly / monthly bucket keys, shared by the worker and the popup |
+| `utils/periods.js` | Period arithmetic for the popup's window comparisons |
+| `utils/insights.js` | Pure calculations behind the insights panel |
+| `background/background.template.js` | Source of the service worker |
+| `background/background.js` | **Generated** — do not edit by hand, run `npm run build` |
+| `content/content.js` | Activity tracking in the page |
+| `content/overlay.js` | Shadow DOM overlays (warnings, break screen) |
+| `popup/` | The popup dashboard |
+| `scripts/build.js` | The build step that generates the service worker |
+
+The build inlines `utils/constants.js` and `utils/dates.js` into the service worker and **fails loudly** if a placeholder is missing, if a required config key was dropped, or if the generated file is not valid JavaScript. The committed `background/background.js` is checked against a fresh build by the test suite, so a stale service worker can never ship.
 
 ---
 
@@ -109,13 +141,14 @@ Click **Reset Statistics** in the footer to clear all accumulated data.
 
 ---
 
-## 🛠 Tech Stack
+## 🛠 Tech stack
 
-- **Manifest V3** Chrome Extension API
-- Vanilla **JavaScript** (no dependencies)
+- **Manifest V3** Chrome extension APIs
+- Vanilla **JavaScript** (no runtime dependencies)
 - **Shadow DOM** for style isolation
-- **CSS Custom Properties** for theming
+- **CSS custom properties** for theming
 - `chrome.storage.local`, `chrome.alarms`, `chrome.tabs`
+- **Jest** and **ESLint** for testing and linting
 
 ---
 
@@ -123,17 +156,25 @@ Click **Reset Statistics** in the footer to clear all accumulated data.
 
 1. Fork the repository.
 2. Create a feature branch: `git checkout -b feature/my-feature`.
-3. Commit your changes: `git commit -m "feat: add my feature"`.
-4. Push to the branch: `git push origin feature/my-feature`.
-5. Open a Pull Request.
+3. Run `npm run build && npm test && npm run lint`.
+4. Commit your changes: `git commit -m "feat: add my feature"`.
+5. Push to the branch: `git push origin feature/my-feature`.
+6. Open a pull request.
 
-Please keep PRs focused and include a clear description of the change.
+Please keep pull requests focused and include a clear description of the change.
 
 ---
 
 ## 📄 License
 
 MIT © GSMPRANEETH
+
 ### Analytics limits
 
-Daily, ISO-week and monthly charts use recorded UTC activity. The trend compares the last two recorded buckets, which may be partial periods. Focus-session and time-saved cards show an unavailable marker because session outcomes and a measured baseline are not collected. Settings imports are validated before a single storage write; resetting settings preserves activity history.
+Daily, ISO-week and monthly charts use recorded UTC activity. The insight cards compare
+the current seven calendar periods against the seven before them, so a period without
+any recorded activity counts as zero rather than disappearing from the comparison. A
+period that is still in progress is partial, so the comparison against it is
+provisional. Settings imports are validated before a single storage write, and
+resetting the settings preserves the recorded activity history.
+

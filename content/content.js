@@ -11,10 +11,12 @@
 'use strict';
 
 /* ─── Guard: prevent double-injection ───────────────────────────────────── */
+(() => {
 if (window.__dsbContentLoaded) {
   // Already running on this page, bail out silently.
   console.warn('[DSB] Content script already loaded on this page.');
-} else {
+  return;
+}
 window.__dsbContentLoaded = true;
 
 /* ─── Page context classification ───────────────────────────────────────── */
@@ -417,7 +419,9 @@ const sectionCheckInterval = setInterval(() => {
           url: window.location.href
         }
       });
-    } catch (_) {}
+    } catch (_) {
+      // Intentionally ignored — a failed navigation notification must not break the page.
+    }
   }
 }, SECTION_CHECK_INTERVAL);
 
@@ -469,7 +473,7 @@ function sendActivityReport() {
   };
 
   try {
-    chrome.runtime.sendMessage(report, (response) => {
+    chrome.runtime.sendMessage(report, () => {
       if (chrome.runtime.lastError) {
         console.warn('[DSB] Message error:', chrome.runtime.lastError.message);
       }
@@ -535,4 +539,4 @@ window.addEventListener('beforeunload', () => {
   document.removeEventListener('touchend',  onTouchEnd,  { capture: true });
 });
 
-} // end guard: if (!window.__dsbContentLoaded)
+})(); // end guard IIFE

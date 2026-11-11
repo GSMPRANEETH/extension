@@ -148,19 +148,19 @@
       <!-- Insights container -->
       <div id="dsb-insights-container">
         <div class="dsb-insight-item">
-          <h3 class="dsb-insight-title">Focus Sessions</h3>
-          <p class="dsb-insight-value" id="dsb-focus-sessions" title="Session outcomes are not recorded in this version.">—</p>
-          <p class="dsb-insight-label">Sessions under warning threshold</p>
+          <h3 class="dsb-insight-title">Focus Periods</h3>
+          <p class="dsb-insight-value" id="dsb-focus-sessions">0</p>
+          <p class="dsb-insight-label" id="dsb-focus-sessions-label">Days without a warning</p>
         </div>
         <div class="dsb-insight-item">
           <h3 class="dsb-insight-title">Time Saved</h3>
-          <p class="dsb-insight-value" id="dsb-time-saved" title="Time saved needs a measured baseline; no estimate is fabricated.">—</p>
-          <p class="dsb-insight-label">Estimated time saved</p>
+          <p class="dsb-insight-value" id="dsb-time-saved">0m</p>
+          <p class="dsb-insight-label" id="dsb-time-saved-label">vs previous 7 days</p>
         </div>
         <div class="dsb-insight-item">
           <h3 class="dsb-insight-title">Improvement Trend</h3>
           <p class="dsb-insight-value" id="dsb-improvement-trend">—</p>
-          <p class="dsb-insight-label">vs prior recorded period</p>
+          <p class="dsb-insight-label" id="dsb-improvement-trend-label">warnings vs previous 7 days</p>
         </div>
       </div>
 
@@ -267,6 +267,10 @@
     <button id="dsb-reset-btn" class="dsb-btn dsb-btn-danger">Reset Statistics</button>
   </footer>
 
+  <script src="../utils/constants.js"></script>
+  <script src="../utils/dates.js"></script>
+  <script src="../utils/periods.js"></script>
+  <script src="../utils/insights.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
